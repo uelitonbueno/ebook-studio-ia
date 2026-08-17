@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildChapterPrompt, buildOutlinePrompt, buildRewritePrompt, outlineSchema } from "./ebookRules";
+import { buildChapterPrompt, buildDiscoveryPrompt, buildOutlinePrompt, buildRewritePrompt, discoverySchema, outlineSchema } from "./ebookRules";
 
 const brief = {
   title: "Escrever sem Pressa",
@@ -7,6 +7,9 @@ const brief = {
   genre: "Desenvolvimento pessoal",
   tone: "Clareza e proximidade",
   targetAudience: "Pessoas criativas",
+  objective: "Ajudar autores iniciantes a construir uma prática de escrita constante.",
+  referenceNotes: "Usar exemplos acolhedores e aplicáveis à rotina brasileira.",
+  discoveryAnalysis: null,
 };
 
 describe("regras editoriais", () => {
@@ -41,5 +44,42 @@ describe("regras editoriais", () => {
     const prompt = buildRewritePrompt(brief, { title: "Continuar", content: "Texto original do capítulo." }, "Deixe o exemplo mais prático.");
     expect(prompt).toContain("Deixe o exemplo mais prático.");
     expect(prompt).toContain("Texto original do capítulo.");
+  });
+
+  it("estrutura a descoberta de uma ideia extensa para texto e imagens", () => {
+    const prompt = buildDiscoveryPrompt({ ...brief, visualStyle: "Aquarela delicada" });
+    expect(prompt).toContain(brief.referenceNotes);
+    expect(prompt).toContain("ESTILO VISUAL DESEJADO");
+
+    const analysis = discoverySchema.safeParse({
+      editorialSummary: "Um livro devocional acolhedor para fortalecer a rotina de fé com leituras curtas e práticas.",
+      refinedIdea: "Criar um devocional cristão de trinta dias para adultos que desejam estabelecer uma rotina de oração e reflexão bíblica, com linguagem simples e exercícios aplicáveis.",
+      suggestedAudience: "Adultos cristãos que buscam constância espiritual no cotidiano.",
+      suggestedTone: "Acolhedor, bíblico e prático",
+      suggestedVisualStyle: "Aquarela delicada com luz suave e elementos naturais",
+      intentions: ["Ajudar o leitor a construir uma rotina de oração possível.", "Apresentar reflexões bíblicas com aplicação cotidiana."],
+      themes: ["oração", "constância", "fé no cotidiano"],
+      titleSuggestions: [
+        { title: "Trinta Dias de Presença", subtitle: "Um devocional para cultivar fé no cotidiano", rationale: "Une prazo claro, promessa espiritual e leitura acessível." },
+        { title: "Pausa para a Fé", subtitle: "Reflexões simples para todos os dias", rationale: "É memorável e comunica leveza." },
+        { title: "Caminho de Oração", subtitle: "Um encontro diário com Deus", rationale: "Conecta oração, prática e espiritualidade." },
+      ],
+      structureSuggestions: [
+        { title: "Começar com presença", purpose: "Apresentar a proposta e preparar uma rotina breve de leitura." },
+        { title: "Cultivar constância", purpose: "Explorar pequenos hábitos de oração e reflexão aplicáveis." },
+        { title: "Levar a fé adiante", purpose: "Convidar o leitor a continuar a prática após o livro." },
+      ],
+      coverDirections: ["Caminho claro ao amanhecer com Bíblia aberta e luz suave.", "Mesa de madeira clara com caderno de oração e ramos discretos."],
+      illustrationDirections: ["Mãos segurando uma Bíblia com luz matinal suave.", "Janela iluminada e mesa simples de oração."],
+      keywords: ["devocional cristão", "oração diária", "fé no cotidiano"],
+    });
+    expect(analysis.success).toBe(true);
+  });
+
+  it("preserva briefings longos ao preparar a leitura editorial", () => {
+    const longIdea = "Contexto pastoral, público, objetivo e referências do projeto. ".repeat(450);
+    const prompt = buildDiscoveryPrompt({ ...brief, idea: longIdea, objective: longIdea, referenceNotes: longIdea });
+    expect(prompt).toContain(longIdea);
+    expect(prompt.length).toBeGreaterThan(20000);
   });
 });

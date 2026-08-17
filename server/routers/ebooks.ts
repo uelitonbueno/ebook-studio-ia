@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { createEbookAsset, createEbookExport, createEbook, deleteEbook, getEbookDetails, listEbooksByUser, replaceChapters, updateChapter, updateEbook } from "../db";
-import { buildChapterPrompt, buildOutlinePrompt, buildRewritePrompt, outlineSchema } from "../ebookRules";
+import { buildChapterPrompt, buildDiscoveryPrompt, buildOutlinePrompt, buildRewritePrompt, discoverySchema, outlineSchema } from "../ebookRules";
 import { buildEbookExportBuffer, EbookExportFormat } from "../exporters";
 import { generateImage } from "../_core/imageGeneration";
 import { invokeLLM, listLLMModels } from "../_core/llm";
@@ -9,13 +9,18 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { storagePut } from "../storage";
 
 const projectInput = z.object({
-  idea: z.string().min(12, "Descreva um pouco mais a sua ideia.").max(4000),
+  idea: z.string().min(12, "Descreva um pouco mais a sua ideia.").max(30000),
   title: z.string().min(2).max(255).optional(),
   genre: z.string().max(120).optional(),
-  tone: z.string().max(120).optional(),
-  targetAudience: z.string().max(255).optional(),
-  visualStyle: z.string().max(160).optional(),
+  tone: z.string().max(5000).optional(),
+  targetAudience: z.string().max(30000).optional(),
+  visualStyle: z.string().max(30000).optional(),
+  objective: z.string().max(30000).optional(),
+  referenceNotes: z.string().max(30000).optional(),
+  discoveryAnalysis: z.string().max(30000).optional(),
 });
+
+const discoveryInput = projectInput.pick({ idea: true, genre: true, tone: true, targetAudience: true, visualStyle: true, objective: true, referenceNotes: true });
 
 function safeFilename(value: string) {
   return value.toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "ebook";
@@ -62,6 +67,33 @@ const outlineResponseFormat = {
   },
 };
 
+const discoveryResponseFormat = {
+  type: "json_schema" as const,
+  json_schema: {
+    name: "book_discovery",
+    strict: true,
+    schema: {
+      type: "object",
+      properties: {
+        editorialSummary: { type: "string" },
+        refinedIdea: { type: "string" },
+        suggestedAudience: { type: "string" },
+        suggestedTone: { type: "string" },
+        suggestedVisualStyle: { type: "string" },
+        intentions: { type: "array", items: { type: "string" } },
+        themes: { type: "array", items: { type: "string" } },
+        titleSuggestions: { type: "array", items: { type: "object", properties: { title: { type: "string" }, subtitle: { type: "string" }, rationale: { type: "string" } }, required: ["title", "subtitle", "rationale"], additionalProperties: false } },
+        structureSuggestions: { type: "array", items: { type: "object", properties: { title: { type: "string" }, purpose: { type: "string" } }, required: ["title", "purpose"], additionalProperties: false } },
+        coverDirections: { type: "array", items: { type: "string" } },
+        illustrationDirections: { type: "array", items: { type: "string" } },
+        keywords: { type: "array", items: { type: "string" } },
+      },
+      required: ["editorialSummary", "refinedIdea", "suggestedAudience", "suggestedTone", "suggestedVisualStyle", "intentions", "themes", "titleSuggestions", "structureSuggestions", "coverDirections", "illustrationDirections", "keywords"],
+      additionalProperties: false,
+    },
+  },
+};
+
 export const ebookRouter = router({
   list: protectedProcedure.query(({ ctx }) => listEbooksByUser(ctx.user.id)),
 
@@ -70,6 +102,20 @@ export const ebookRouter = router({
   create: protectedProcedure.input(projectInput).mutation(async ({ ctx, input }) => {
     const suggestedTitle = input.title?.trim() || input.idea.trim().split(/[.!?]/)[0].slice(0, 72) || "Novo e-book";
     return createEbook({ userId: ctx.user.id, ...input, title: suggestedTitle });
+  }),
+
+  analyzeDiscovery: protectedProcedure.input(discoveryInput).mutation(async ({ input }) => {
+    const model = await selectWritingModel();
+    const result = await invokeLLM({
+      model,
+      messages: [
+        { role: "system", content: "Você é uma editora cristã brasileira experiente. Analise briefings extensos com cuidado, respeite a fé cristã apresentada pelo autor e proponha conteúdo original, útil e publicável. Não imite autores, não use trechos protegidos e não invente citações ou fatos bíblicos." },
+        { role: "user", content: buildDiscoveryPrompt(input) },
+      ],
+      response_format: discoveryResponseFormat,
+    });
+    const raw = result.choices[0]?.message.content;
+    return discoverySchema.parse(JSON.parse(typeof raw === "string" ? raw : "{}"));
   }),
 
   update: protectedProcedure.input(z.object({
@@ -187,9 +233,13 @@ export const ebookRouter = router({
     const project = await getOwnedEbook(input.ebookId, ctx.user.id);
     const selectedChapter = input.chapterId ? project.chapters.find(chapter => chapter.id === input.chapterId) : undefined;
     if (input.chapterId && !selectedChapter) throw new TRPCError({ code: "NOT_FOUND", message: "Capítulo não encontrado." });
+    const savedDiscovery = (() => {
+      try { return project.ebook.discoveryAnalysis ? discoverySchema.parse(JSON.parse(project.ebook.discoveryAnalysis)) : null; } catch { return null; }
+    })();
+    const suggestedDirection = input.type === "cover" ? savedDiscovery?.coverDirections[0] : savedDiscovery?.illustrationDirections[0];
     const prompt = input.type === "cover"
-      ? `Capa editorial de e-book para uma obra com o conceito: ${project.ebook.idea}. Estilo visual: ${project.ebook.visualStyle ?? "minimalismo escandinavo, formas geométricas em azul pastel e rosa blush"}. Composição sofisticada, espaço negativo, aparência de capa de livraria contemporânea, sem palavras, sem letras, sem marcas, sem logotipos. Direção adicional: ${input.direction ?? "equilíbrio entre clareza e impacto"}.`
-      : `Ilustração editorial interna para o capítulo "${selectedChapter?.title ?? "do e-book"}" de uma obra sobre ${project.ebook.idea}. Resumo: ${selectedChapter?.summary ?? "crie uma imagem conceitual"}. Estilo: ${project.ebook.visualStyle ?? "minimalismo escandinavo, formas geométricas em azul pastel e rosa blush"}. Sem palavras, sem letras, sem marcas, sem logotipos. Direção adicional: ${input.direction ?? "delicada e conceitual"}.`;
+      ? `Capa editorial de e-book para uma obra com o conceito: ${project.ebook.idea}. Estilo visual: ${project.ebook.visualStyle ?? "minimalismo escandinavo, formas geométricas em azul pastel e rosa blush"}. Composição sofisticada, espaço negativo, aparência de capa de livraria contemporânea, sem palavras, sem letras, sem marcas, sem logotipos. Direção adicional: ${input.direction ?? suggestedDirection ?? "equilíbrio entre clareza e impacto"}.`
+      : `Ilustração editorial interna para o capítulo "${selectedChapter?.title ?? "do e-book"}" de uma obra sobre ${project.ebook.idea}. Resumo: ${selectedChapter?.summary ?? "crie uma imagem conceitual"}. Estilo: ${project.ebook.visualStyle ?? "minimalismo escandinavo, formas geométricas em azul pastel e rosa blush"}. Sem palavras, sem letras, sem marcas, sem logotipos. Direção adicional: ${input.direction ?? suggestedDirection ?? "delicada e conceitual"}.`;
     const generated = await generateImage({ prompt, quality: "high" });
     if (!generated.url) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível gerar a imagem agora." });
     const url = generated.url;

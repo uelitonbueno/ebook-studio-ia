@@ -17,3 +17,9 @@
 - [x] Definir a categoria cristã como padrão e opção explícita ao criar um novo e-book.
 - [x] Limitar a altura do campo de ideia e habilitar rolagem interna para descrições longas.
 - [x] Manter o botão de criar projeto acessível no modal, inclusive em telas pequenas e textos extensos.
+- [x] Ampliar os limites de texto dos campos de descoberta para aceitar descrições extensas sem perda de conteúdo.
+- [x] Analisar a ideia extensa com IA e devolver um resumo editorial, intenções, público, temas, títulos e sugestões de estrutura.
+- [x] Sugerir direções de capa e ilustrações internas a partir da análise da ideia antes da geração do projeto.
+- [x] Exibir a análise e permitir que o autor aplique as sugestões ao formulário antes de criar o e-book.
+- [x] Extrair e exibir intenções do projeto e temas centrais na análise de descoberta por IA.
+- [x] Usar armazenamento de texto estendido para preservar briefings e referências muito longos com segurança.

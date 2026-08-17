@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm";
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { int, mediumtext, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
 
 export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
@@ -18,12 +18,15 @@ export const ebooks = mysqlTable("ebooks", {
   userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
   title: varchar("title", { length: 255 }).notNull(),
   subtitle: text("subtitle"),
-  idea: text("idea").notNull(),
+  idea: mediumtext("idea").notNull(),
+  objective: mediumtext("objective"),
+  referenceNotes: mediumtext("referenceNotes"),
+  discoveryAnalysis: mediumtext("discoveryAnalysis"),
   positioning: text("positioning"),
   genre: varchar("genre", { length: 120 }),
-  tone: varchar("tone", { length: 120 }),
-  targetAudience: varchar("targetAudience", { length: 255 }),
-  visualStyle: varchar("visualStyle", { length: 160 }),
+  tone: text("tone"),
+  targetAudience: text("targetAudience"),
+  visualStyle: text("visualStyle"),
   coverUrl: text("coverUrl"),
   status: mysqlEnum("status", ["draft", "generating", "ready"]).default("draft").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

@@ -72,6 +72,9 @@ export type CreateEbookInput = {
   title: string;
   idea: string;
   subtitle?: string;
+  objective?: string;
+  referenceNotes?: string;
+  discoveryAnalysis?: string;
   genre?: string;
   tone?: string;
   targetAudience?: string;
@@ -88,6 +91,9 @@ export async function createEbook(input: CreateEbookInput) {
   const result = await db.insert(ebooks).values({
     ...input,
     subtitle: input.subtitle ?? null,
+    objective: input.objective ?? null,
+    referenceNotes: input.referenceNotes ?? null,
+    discoveryAnalysis: input.discoveryAnalysis ?? null,
     genre: input.genre ?? null,
     tone: input.tone ?? null,
     targetAudience: input.targetAudience ?? null,
@@ -119,7 +125,7 @@ export async function getEbookDetails(ebookId: number, userId: number): Promise<
 export async function updateEbook(
   ebookId: number,
   userId: number,
-  input: Partial<Pick<Ebook, "title" | "subtitle" | "positioning" | "genre" | "tone" | "targetAudience" | "visualStyle" | "coverUrl" | "status">>,
+  input: Partial<Pick<Ebook, "title" | "subtitle" | "objective" | "referenceNotes" | "discoveryAnalysis" | "positioning" | "genre" | "tone" | "targetAudience" | "visualStyle" | "coverUrl" | "status">>,
 ) {
   const db = requireDb(await getDb());
   await db.update(ebooks).set(input).where(and(eq(ebooks.id, ebookId), eq(ebooks.userId, userId)));

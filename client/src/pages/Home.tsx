@@ -14,6 +14,20 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import DashboardLayout from "../components/DashboardLayout";
 
 type ChapterDraft = { id: number; title: string; summary: string | null; content: string };
+type DiscoveryDraft = {
+  editorialSummary: string;
+  refinedIdea: string;
+  suggestedAudience: string;
+  suggestedTone: string;
+  suggestedVisualStyle: string;
+  intentions: string[];
+  themes: string[];
+  titleSuggestions: Array<{ title: string; subtitle: string; rationale: string }>;
+  structureSuggestions: Array<{ title: string; purpose: string }>;
+  coverDirections: string[];
+  illustrationDirections: string[];
+  keywords: string[];
+};
 
 const formatLabel = { pdf: "PDF", epub: "EPUB", docx: "DOCX" } as const;
 const statusLabel = { draft: "Rascunho", generating: "Criando", ready: "Em edição" } as const;
@@ -32,6 +46,10 @@ function Studio() {
   const [tone, setTone] = useState("Clareza e proximidade");
   const [audience, setAudience] = useState("Leitores em busca de orientação prática");
   const [visualStyle, setVisualStyle] = useState("Minimalismo escandinavo");
+  const [objective, setObjective] = useState("");
+  const [referenceNotes, setReferenceNotes] = useState("");
+  const [suggestedTitle, setSuggestedTitle] = useState("");
+  const [discovery, setDiscovery] = useState<DiscoveryDraft | null>(null);
   const [chapterDraft, setChapterDraft] = useState<ChapterDraft | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
@@ -61,9 +79,14 @@ function Studio() {
       setSelectedId(created.id);
       setCreateOpen(false);
       setIdea("");
+      setObjective("");
+      setReferenceNotes("");
+      setSuggestedTitle("");
+      setDiscovery(null);
       await utils.ebook.list.invalidate();
     },
   });
+  const discoveryMutation = trpc.ebook.analyzeDiscovery.useMutation({ onSuccess: analysis => setDiscovery(analysis), onError: error => toast.error(error.message) });
   const outlineMutation = trpc.ebook.generateOutline.useMutation({ onSuccess: refreshBook, onError: error => toast.error(error.message) });
   const chapterMutation = trpc.ebook.generateChapter.useMutation({ onSuccess: refreshBook, onError: error => toast.error(error.message) });
   const rewriteMutation = trpc.ebook.rewriteChapter.useMutation({ onSuccess: async () => { setRewriteOpen(false); setRewriteInstruction(""); await refreshBook(); }, onError: error => toast.error(error.message) });
@@ -82,7 +105,40 @@ function Studio() {
   const submitCreate = (event: FormEvent) => {
     event.preventDefault();
     if (!idea.trim()) return;
-    createMutation.mutate({ idea: idea.trim(), genre, tone, targetAudience: audience, visualStyle });
+    createMutation.mutate({
+      idea: idea.trim(),
+      title: suggestedTitle.trim() || undefined,
+      genre,
+      tone,
+      targetAudience: audience,
+      visualStyle,
+      objective: objective.trim() || undefined,
+      referenceNotes: referenceNotes.trim() || undefined,
+      discoveryAnalysis: discovery ? JSON.stringify(discovery) : undefined,
+    });
+  };
+
+  const analyzeIdea = () => {
+    if (idea.trim().length < 12) return;
+    discoveryMutation.mutate({
+      idea: idea.trim(),
+      genre,
+      tone,
+      targetAudience: audience.trim() || undefined,
+      visualStyle: visualStyle.trim() || undefined,
+      objective: objective.trim() || undefined,
+      referenceNotes: referenceNotes.trim() || undefined,
+    });
+  };
+
+  const applyDiscovery = () => {
+    if (!discovery) return;
+    setIdea(discovery.refinedIdea);
+    setAudience(discovery.suggestedAudience);
+    setTone(discovery.suggestedTone);
+    setVisualStyle(discovery.suggestedVisualStyle);
+    setSuggestedTitle(current => current || discovery.titleSuggestions[0]?.title || "");
+    toast.success("Sugestões aplicadas ao seu projeto. Você ainda pode editar cada campo.");
   };
 
   const saveChapter = () => {
@@ -202,17 +258,20 @@ function Studio() {
       )}
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="create-dialog max-h-[calc(100dvh-24px)] overflow-y-auto sm:max-w-[600px]">
-          <DialogHeader><p className="eyebrow">NOVO E-BOOK</p><DialogTitle>O que você quer transformar em livro?</DialogTitle><DialogDescription>Descreva a ideia em poucas frases. Depois, a IA propõe título, estrutura e capítulos para você editar.</DialogDescription></DialogHeader>
+        <DialogContent className="create-dialog max-h-[calc(100dvh-24px)] overflow-y-auto sm:max-w-[720px]">
+          <DialogHeader><p className="eyebrow">DESCOBRIR SEU LIVRO</p><DialogTitle>Conte tudo o que já imaginou.</DialogTitle><DialogDescription>Você pode escrever um briefing extenso. A IA lê o contexto completo e devolve uma proposta editorial, caminhos de escrita e direções de capa e ilustrações para sua revisão.</DialogDescription></DialogHeader>
           <form onSubmit={submitCreate} className="create-form">
-            <div className="space-y-2"><Label htmlFor="idea">A ideia central</Label><Textarea id="idea" value={idea} onChange={event => setIdea(event.target.value)} placeholder="Ex.: Um e-book devocional para pessoas que desejam fortalecer a fé e cultivar uma rotina de oração." className="h-32 min-h-32 max-h-32 resize-none overflow-y-auto rounded-xl border-[#d9dee0] bg-[#f8f9f9] p-4 text-[14px] shadow-none focus-visible:ring-[#a8c7ee]" /></div>
+            <div className="space-y-2"><div className="flex items-center justify-between gap-4"><Label htmlFor="idea">A ideia central</Label><span className="field-counter">{idea.length.toLocaleString("pt-BR")} caracteres</span></div><Textarea id="idea" value={idea} onChange={event => setIdea(event.target.value)} placeholder="Ex.: Quero criar um livro infantil cristão com histórias bíblicas, atividades e ilustrações para crianças de 4 a 10 anos. Quero que pais, professores e ministérios infantis possam usar o material..." className="h-48 min-h-48 max-h-48 resize-none overflow-y-auto rounded-xl border-[#d9dee0] bg-[#f8f9f9] p-4 text-[14px] leading-relaxed shadow-none focus-visible:ring-[#a8c7ee]" /></div>
             <div className="create-form-grid">
-              <div className="space-y-2"><Label>Categoria</Label><Select value={genre} onValueChange={setGenre}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Ideias cristãs">Ideias cristãs</SelectItem><SelectItem value="Não ficção">Não ficção</SelectItem><SelectItem value="Ficção">Ficção</SelectItem><SelectItem value="Desenvolvimento pessoal">Desenvolvimento pessoal</SelectItem><SelectItem value="Negócios">Negócios</SelectItem></SelectContent></Select></div>
+              <div className="space-y-2"><Label>Categoria</Label><Select value={genre} onValueChange={setGenre}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Ideias cristãs">Ideias cristãs</SelectItem><SelectItem value="Devocional">Devocional</SelectItem><SelectItem value="Livro infantil cristão">Livro infantil cristão</SelectItem><SelectItem value="Livro de colorir cristão">Livro de colorir cristão</SelectItem><SelectItem value="Livro de atividades cristão">Livro de atividades cristão</SelectItem><SelectItem value="Romance cristão">Romance cristão</SelectItem><SelectItem value="Não ficção">Não ficção</SelectItem><SelectItem value="Ficção">Ficção</SelectItem></SelectContent></Select></div>
               <div className="space-y-2"><Label>Tom</Label><Select value={tone} onValueChange={setTone}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Clareza e proximidade">Clareza e proximidade</SelectItem><SelectItem value="Inspirador">Inspirador</SelectItem><SelectItem value="Técnico e objetivo">Técnico e objetivo</SelectItem><SelectItem value="Poético e sensível">Poético e sensível</SelectItem></SelectContent></Select></div>
             </div>
-            <div className="create-form-grid"><div className="space-y-2"><Label htmlFor="audience">Para quem</Label><Input id="audience" value={audience} onChange={event => setAudience(event.target.value)} /></div><div className="space-y-2"><Label>Estilo visual</Label><Select value={visualStyle} onValueChange={setVisualStyle}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Minimalismo escandinavo">Minimalismo escandinavo</SelectItem><SelectItem value="Editorial contemporâneo">Editorial contemporâneo</SelectItem><SelectItem value="Ilustração orgânica">Ilustração orgânica</SelectItem></SelectContent></Select></div></div>
+            <div className="create-form-grid"><div className="space-y-2"><Label htmlFor="audience">Para quem</Label><Textarea id="audience" value={audience} onChange={event => setAudience(event.target.value)} className="discovery-textarea" placeholder="Descreva o público que deseja alcançar." /></div><div className="space-y-2"><Label htmlFor="visual-style">Direção visual</Label><Textarea id="visual-style" value={visualStyle} onChange={event => setVisualStyle(event.target.value)} className="discovery-textarea" placeholder="Ex.: ilustrações em aquarela suave, acolhedoras e adequadas para crianças." /></div></div>
+            <div className="create-form-grid"><div className="space-y-2"><Label htmlFor="objective">Objetivo do livro</Label><Textarea id="objective" value={objective} onChange={event => setObjective(event.target.value)} className="discovery-textarea" placeholder="Ex.: apoiar uma rotina de devocionais familiares e preparar material para publicação." /></div><div className="space-y-2"><Label htmlFor="references">Referências e observações</Label><Textarea id="references" value={referenceNotes} onChange={event => setReferenceNotes(event.target.value)} className="discovery-textarea" placeholder="Descreva personagens, versículos a considerar, regras de linguagem, referências ou materiais anexos." /></div></div>
+            <Button type="button" onClick={analyzeIdea} disabled={discoveryMutation.isPending || idea.trim().length < 12} variant="outline" className="discovery-analyze-button">{discoveryMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}{discoveryMutation.isPending ? "Lendo seu briefing..." : "Ler ideia com IA e sugerir caminhos"}</Button>
+            {discovery ? <section className="discovery-result"><div className="discovery-result-head"><div><p className="eyebrow">LEITURA EDITORIAL DA IA</p><h3>Uma proposta para você revisar.</h3></div><Button type="button" onClick={applyDiscovery} variant="outline" className="h-9 rounded-xl text-[11px] font-bold">Aplicar sugestões</Button></div><p className="discovery-summary">{discovery.editorialSummary}</p><div className="discovery-focus-grid"><div><p className="discovery-label">INTENÇÕES IDENTIFICADAS</p>{discovery.intentions.map(intention => <p key={intention}>{intention}</p>)}</div><div><p className="discovery-label">TEMAS CENTRAIS</p><div className="discovery-keywords">{discovery.themes.map(theme => <span key={theme}>{theme}</span>)}</div></div></div><div className="discovery-keywords">{discovery.keywords.map(keyword => <span key={keyword}>{keyword}</span>)}</div><div className="discovery-title-field"><Label htmlFor="suggested-title">Título escolhido</Label><Input id="suggested-title" value={suggestedTitle} onChange={event => setSuggestedTitle(event.target.value)} placeholder="Selecione uma sugestão ou escreva seu título" /></div><div className="discovery-columns"><div><p className="discovery-label">TÍTULOS SUGERIDOS</p>{discovery.titleSuggestions.map(option => <button key={option.title} type="button" onClick={() => setSuggestedTitle(option.title)} className={cn("discovery-option", suggestedTitle === option.title && "discovery-option-active")}><strong>{option.title}</strong><span>{option.subtitle}</span><small>{option.rationale}</small></button>)}</div><div><p className="discovery-label">ESTRUTURA POSSÍVEL</p>{discovery.structureSuggestions.map(item => <div key={item.title} className="discovery-structure"><strong>{item.title}</strong><span>{item.purpose}</span></div>)}</div></div><div className="discovery-columns discovery-visual-columns"><div><p className="discovery-label">DIREÇÕES DE CAPA</p>{discovery.coverDirections.map(direction => <p key={direction} className="visual-direction">{direction}</p>)}</div><div><p className="discovery-label">ILUSTRAÇÕES INTERNAS</p>{discovery.illustrationDirections.map(direction => <p key={direction} className="visual-direction">{direction}</p>)}</div></div></section> : null}
             {createMutation.error ? <p className="text-sm text-destructive">{createMutation.error.message}</p> : null}
-            <div className="create-dialog-actions"><Button type="submit" disabled={createMutation.isPending || idea.trim().length < 12} className="new-book-button">{createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}Criar projeto</Button></div>
+            <div className="create-dialog-actions"><span>{discovery ? "As sugestões serão salvas no projeto." : "Você pode criar agora ou pedir uma leitura da IA."}</span><Button type="submit" disabled={createMutation.isPending || idea.trim().length < 12} className="new-book-button">{createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}Criar projeto</Button></div>
           </form>
         </DialogContent>
       </Dialog>
