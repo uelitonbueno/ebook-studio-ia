@@ -42,4 +42,11 @@
 - [x] Habilitar a sessão de navegador do usuário para validar os controles autenticados do estúdio.
 - [x] Revalidar geração, nova tentativa, exportação e confirmação de exclusão no ambiente autenticado.
 - [ ] Testar o botão de marcar revisada e confirmar o feedback visual da página no ambiente autenticado.
+- [ ] Diagnosticar a causa da falha real ao regenerar uma figura e permitir que a nova tentativa conclua com sucesso.
+- [ ] Validar no navegador autenticado a recuperação da imagem após usar Tentar novamente.
+- [x] Mapear a indisponibilidade do serviço de imagens para uma orientação clara e desabilitar nova tentativa enquanto persistir.
+- [x] Preservar a revisão de uma página quando a regeneração de imagem falhar.
+- [x] Persistir a indisponibilidade de geração de imagens para manter novas tentativas bloqueadas após atualizar a página.
+- [x] Cobrir em teste automatizado o bloqueio persistente causado por usage exhausted ou failed_precondition.
+- [x] Testar o procedimento de geração ao persistir e respeitar o bloqueio causado por indisponibilidade do provedor de imagens.
 - [x] Registrar a confirmação e o cancelamento da exclusão sem remover o projeto do usuário.

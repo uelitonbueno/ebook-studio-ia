@@ -133,7 +133,7 @@ export async function getEbookDetails(ebookId: number, userId: number): Promise<
 export async function updateEbook(
   ebookId: number,
   userId: number,
-  input: Partial<Pick<Ebook, "title" | "subtitle" | "objective" | "referenceNotes" | "discoveryAnalysis" | "positioning" | "genre" | "bookType" | "pageCount" | "tone" | "targetAudience" | "visualStyle" | "coverUrl" | "status">>,
+  input: Partial<Pick<Ebook, "title" | "subtitle" | "objective" | "referenceNotes" | "discoveryAnalysis" | "positioning" | "genre" | "bookType" | "pageCount" | "tone" | "targetAudience" | "visualStyle" | "coverUrl" | "imageGenerationRetryAfter" | "status">>,
 ) {
   const db = requireDb(await getDb());
   await db.update(ebooks).set(input).where(and(eq(ebooks.id, ebookId), eq(ebooks.userId, userId)));

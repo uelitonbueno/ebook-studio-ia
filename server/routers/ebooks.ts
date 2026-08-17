@@ -7,6 +7,7 @@ import { generateImage } from "../_core/imageGeneration";
 import { invokeLLM, listLLMModels } from "../_core/llm";
 import { protectedProcedure, router } from "../_core/trpc";
 import { storagePut } from "../storage";
+import { getImageGenerationRetryAfter, isImageGenerationBlocked, isImageGenerationUnavailable, restorePageStatusAfterImageFailure } from "../imageGenerationState";
 
 const projectInput = z.object({
   idea: z.string().min(12, "Descreva um pouco mais a sua ideia.").max(30000),
@@ -245,14 +246,23 @@ export const ebookRouter = router({
     const project = await getOwnedEbook(input.ebookId, ctx.user.id);
     const page = project.pages.find(item => item.id === input.pageId);
     if (!page) throw new TRPCError({ code: "NOT_FOUND", message: "Página não encontrada." });
+    if (isImageGenerationBlocked(project.ebook.imageGenerationRetryAfter)) {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "A geração de imagens está indisponível para esta conta no momento. Tente novamente mais tarde." });
+    }
     await updateBookPage(page.id, input.ebookId, ctx.user.id, { status: "generating" });
     const prompt = `${buildPageImagePrompt(project.ebook, page)} Direção adicional do autor: ${input.direction ?? "seguir o conteúdo e a proposta visual da página"}.${input.variation ? ` Crie uma nova composição visual, distinta das tentativas anteriores. Variação: ${input.variation}.` : ""}`;
     try {
-      const generated = await generateImage({ prompt, quality: "high" });
+      const generated = await generateImage({ prompt, quality: "medium" });
       if (!generated.url) throw new Error("Imagem ausente");
+      await updateEbook(input.ebookId, ctx.user.id, { imageGenerationRetryAfter: null });
       return await updateBookPage(page.id, input.ebookId, ctx.user.id, { imageUrl: generated.url, status: "ready", imagePrompt: input.direction?.trim() || page.imagePrompt });
-    } catch {
-      await updateBookPage(page.id, input.ebookId, ctx.user.id, { status: "draft" });
+    } catch (error) {
+      console.error("[Ebook] Falha ao gerar imagem de página", { ebookId: input.ebookId, pageId: input.pageId, error });
+      await updateBookPage(page.id, input.ebookId, ctx.user.id, { status: restorePageStatusAfterImageFailure(page.status) });
+      if (isImageGenerationUnavailable(error)) {
+        await updateEbook(input.ebookId, ctx.user.id, { imageGenerationRetryAfter: getImageGenerationRetryAfter() });
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "A geração de imagens está indisponível para esta conta no momento. Tente novamente mais tarde." });
+      }
       throw new TRPCError({ code: "BAD_GATEWAY", message: "Não foi possível gerar a imagem desta página. Tente novamente." });
     }
   }),

@@ -30,6 +30,7 @@ export const ebooks = mysqlTable("ebooks", {
   targetAudience: text("targetAudience"),
   visualStyle: text("visualStyle"),
   coverUrl: text("coverUrl"),
+  imageGenerationRetryAfter: timestamp("imageGenerationRetryAfter"),
   status: mysqlEnum("status", ["draft", "generating", "ready"]).default("draft").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
