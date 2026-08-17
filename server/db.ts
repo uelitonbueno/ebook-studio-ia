@@ -1,11 +1,22 @@
-import { eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
-import { ENV } from './_core/env';
+import {
+  Chapter,
+  Ebook,
+  EbookAsset,
+  EbookExport,
+  InsertUser,
+  User,
+  chapters,
+  ebookAssets,
+  ebookExports,
+  ebooks,
+  users,
+} from "../drizzle/schema";
+import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
-// Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
@@ -18,75 +29,166 @@ export async function getDb() {
   return _db;
 }
 
+function requireDb(db: Awaited<ReturnType<typeof getDb>>) {
+  if (!db) throw new Error("Database unavailable");
+  return db;
+}
+
 export async function upsertUser(user: InsertUser): Promise<void> {
-  if (!user.openId) {
-    throw new Error("User openId is required for upsert");
-  }
-
+  if (!user.openId) throw new Error("User openId is required for upsert");
   const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot upsert user: database not available");
-    return;
+  if (!db) return;
+
+  const values: InsertUser = { openId: user.openId, lastSignedIn: new Date() };
+  const updateSet: Record<string, unknown> = { lastSignedIn: new Date() };
+  for (const field of ["name", "email", "loginMethod"] as const) {
+    if (user[field] !== undefined) {
+      values[field] = user[field] ?? null;
+      updateSet[field] = user[field] ?? null;
+    }
   }
+  values.role = user.role ?? (user.openId === ENV.ownerOpenId ? "admin" : "user");
+  updateSet.role = values.role;
 
-  try {
-    const values: InsertUser = {
-      openId: user.openId,
-    };
-    const updateSet: Record<string, unknown> = {};
-
-    const textFields = ["name", "email", "loginMethod"] as const;
-    type TextField = (typeof textFields)[number];
-
-    const assignNullable = (field: TextField) => {
-      const value = user[field];
-      if (value === undefined) return;
-      const normalized = value ?? null;
-      values[field] = normalized;
-      updateSet[field] = normalized;
-    };
-
-    textFields.forEach(assignNullable);
-
-    if (user.lastSignedIn !== undefined) {
-      values.lastSignedIn = user.lastSignedIn;
-      updateSet.lastSignedIn = user.lastSignedIn;
-    }
-    if (user.role !== undefined) {
-      values.role = user.role;
-      updateSet.role = user.role;
-    } else if (user.openId === ENV.ownerOpenId) {
-      values.role = 'admin';
-      updateSet.role = 'admin';
-    }
-
-    if (!values.lastSignedIn) {
-      values.lastSignedIn = new Date();
-    }
-
-    if (Object.keys(updateSet).length === 0) {
-      updateSet.lastSignedIn = new Date();
-    }
-
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
-      set: updateSet,
-    });
-  } catch (error) {
-    console.error("[Database] Failed to upsert user:", error);
-    throw error;
-  }
+  await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
 }
 
 export async function getUserByOpenId(openId: string) {
   const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot get user: database not available");
-    return undefined;
-  }
-
+  if (!db) return undefined;
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
-
-  return result.length > 0 ? result[0] : undefined;
+  return result[0] as User | undefined;
 }
 
-// TODO: add feature queries here as your schema grows.
+export type EbookDetails = {
+  ebook: Ebook;
+  chapters: Chapter[];
+  assets: EbookAsset[];
+  exports: EbookExport[];
+};
+
+export type CreateEbookInput = {
+  userId: number;
+  title: string;
+  idea: string;
+  subtitle?: string;
+  genre?: string;
+  tone?: string;
+  targetAudience?: string;
+  visualStyle?: string;
+};
+
+export async function listEbooksByUser(userId: number) {
+  const db = requireDb(await getDb());
+  return db.select().from(ebooks).where(eq(ebooks.userId, userId)).orderBy(desc(ebooks.updatedAt));
+}
+
+export async function createEbook(input: CreateEbookInput) {
+  const db = requireDb(await getDb());
+  const result = await db.insert(ebooks).values({
+    ...input,
+    subtitle: input.subtitle ?? null,
+    genre: input.genre ?? null,
+    tone: input.tone ?? null,
+    targetAudience: input.targetAudience ?? null,
+    visualStyle: input.visualStyle ?? "Editorial minimalista",
+  });
+  const id = Number(result[0].insertId);
+  const created = await db.select().from(ebooks).where(eq(ebooks.id, id)).limit(1);
+  return created[0] as Ebook;
+}
+
+export async function getEbookDetails(ebookId: number, userId: number): Promise<EbookDetails | null> {
+  const db = requireDb(await getDb());
+  const result = await db
+    .select()
+    .from(ebooks)
+    .where(and(eq(ebooks.id, ebookId), eq(ebooks.userId, userId)))
+    .limit(1);
+  const ebook = result[0] as Ebook | undefined;
+  if (!ebook) return null;
+
+  const [chapterRows, assetRows, exportRows] = await Promise.all([
+    db.select().from(chapters).where(eq(chapters.ebookId, ebookId)).orderBy(asc(chapters.position)),
+    db.select().from(ebookAssets).where(eq(ebookAssets.ebookId, ebookId)).orderBy(desc(ebookAssets.createdAt)),
+    db.select().from(ebookExports).where(eq(ebookExports.ebookId, ebookId)).orderBy(desc(ebookExports.createdAt)),
+  ]);
+  return { ebook, chapters: chapterRows, assets: assetRows, exports: exportRows };
+}
+
+export async function updateEbook(
+  ebookId: number,
+  userId: number,
+  input: Partial<Pick<Ebook, "title" | "subtitle" | "positioning" | "genre" | "tone" | "targetAudience" | "visualStyle" | "coverUrl" | "status">>,
+) {
+  const db = requireDb(await getDb());
+  await db.update(ebooks).set(input).where(and(eq(ebooks.id, ebookId), eq(ebooks.userId, userId)));
+  return getEbookDetails(ebookId, userId);
+}
+
+export async function deleteEbook(ebookId: number, userId: number) {
+  const db = requireDb(await getDb());
+  await db.delete(ebooks).where(and(eq(ebooks.id, ebookId), eq(ebooks.userId, userId)));
+}
+
+export async function replaceChapters(
+  ebookId: number,
+  userId: number,
+  drafts: Array<{ title: string; summary: string }>,
+) {
+  const db = requireDb(await getDb());
+  const owned = await getEbookDetails(ebookId, userId);
+  if (!owned) return null;
+  await db.delete(chapters).where(eq(chapters.ebookId, ebookId));
+  if (drafts.length) {
+    await db.insert(chapters).values(drafts.map((chapter, index) => ({
+      ebookId,
+      position: index + 1,
+      title: chapter.title,
+      summary: chapter.summary,
+      content: "",
+    })));
+  }
+  return getEbookDetails(ebookId, userId);
+}
+
+export async function updateChapter(
+  chapterId: number,
+  ebookId: number,
+  userId: number,
+  input: Partial<Pick<Chapter, "title" | "summary" | "content">>,
+) {
+  const db = requireDb(await getDb());
+  const owned = await getEbookDetails(ebookId, userId);
+  if (!owned?.chapters.some(chapter => chapter.id === chapterId)) return null;
+  await db.update(chapters).set(input).where(eq(chapters.id, chapterId));
+  const result = await db.select().from(chapters).where(eq(chapters.id, chapterId)).limit(1);
+  return result[0] as Chapter | undefined;
+}
+
+export async function createEbookAsset(input: {
+  ebookId: number;
+  chapterId?: number;
+  type: "cover" | "illustration";
+  prompt: string;
+  imageUrl: string;
+}) {
+  const db = requireDb(await getDb());
+  const result = await db.insert(ebookAssets).values({ ...input, chapterId: input.chapterId ?? null });
+  const id = Number(result[0].insertId);
+  const created = await db.select().from(ebookAssets).where(eq(ebookAssets.id, id)).limit(1);
+  return created[0] as EbookAsset;
+}
+
+export async function createEbookExport(input: {
+  ebookId: number;
+  format: "pdf" | "epub" | "docx";
+  storageKey: string;
+  downloadUrl: string;
+}) {
+  const db = requireDb(await getDb());
+  const result = await db.insert(ebookExports).values(input);
+  const id = Number(result[0].insertId);
+  const created = await db.select().from(ebookExports).where(eq(ebookExports.id, id)).limit(1);
+  return created[0] as EbookExport;
+}

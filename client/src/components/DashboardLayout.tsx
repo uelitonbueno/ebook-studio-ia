@@ -1,5 +1,5 @@
-import { useAuth } from "@/_core/hooks/useAuth";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,31 +17,27 @@ import {
   SidebarMenuItem,
   SidebarProvider,
   SidebarTrigger,
-  useSidebar,
 } from "@/components/ui/sidebar";
 import { startLogin } from "@/const";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Users } from "lucide-react";
+import { BookOpenText, Compass, FileDown, LogOut, PanelLeft, Plus } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
-import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
-import { Button } from "./ui/button";
+import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 
 const menuItems = [
-  { icon: LayoutDashboard, label: "Page 1", path: "/" },
-  { icon: Users, label: "Page 2", path: "/some-path" },
+  { icon: BookOpenText, label: "Biblioteca", path: "/" },
+  { icon: Compass, label: "Fluxo criativo", href: "#fluxo" },
+  { icon: FileDown, label: "Exportações", href: "#exportacoes" },
 ];
 
-const SIDEBAR_WIDTH_KEY = "sidebar-width";
-const DEFAULT_WIDTH = 280;
-const MIN_WIDTH = 200;
-const MAX_WIDTH = 480;
+const SIDEBAR_WIDTH_KEY = "ebook-studio-sidebar-width";
+const DEFAULT_WIDTH = 252;
+const MIN_WIDTH = 220;
+const MAX_WIDTH = 360;
 
-export default function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
     return saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
@@ -52,95 +48,56 @@ export default function DashboardLayout({
     localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString());
   }, [sidebarWidth]);
 
-  if (loading) {
-    return <DashboardLayoutSkeleton />
-  }
+  if (loading) return <DashboardLayoutSkeleton />;
 
   if (!user) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="flex flex-col items-center gap-8 p-8 max-w-md w-full">
-          <div className="flex flex-col items-center gap-6">
-            <h1 className="text-2xl font-semibold tracking-tight text-center">
-              Sign in to continue
-            </h1>
-            <p className="text-sm text-muted-foreground text-center max-w-sm">
-              Access to this dashboard requires authentication. Continue to launch the login flow.
-            </p>
-          </div>
-          <Button
-            onClick={() => startLogin()}
-            size="lg"
-            className="w-full shadow-lg hover:shadow-xl transition-all"
-          >
-            Sign in
+      <main className="login-screen">
+        <div className="login-shape login-shape-blue" />
+        <div className="login-shape login-shape-pink" />
+        <section className="login-card">
+          <div className="brand-mark" aria-hidden="true"><span /><span /><span /></div>
+          <p className="eyebrow">EBOOK STUDIO IA</p>
+          <h1>Ideias merecem<br />virar livros.</h1>
+          <p className="login-copy">Crie, estruture, ilustre e publique e-books com uma rotina editorial assistida por inteligência artificial.</p>
+          <Button onClick={() => startLogin()} size="lg" className="login-cta">
+            Entrar no estúdio
+            <Plus className="h-4 w-4" />
           </Button>
-        </div>
-      </div>
+          <p className="login-note">Seus projetos ficam privados na sua biblioteca.</p>
+        </section>
+      </main>
     );
   }
 
   return (
-    <SidebarProvider
-      style={
-        {
-          "--sidebar-width": `${sidebarWidth}px`,
-        } as CSSProperties
-      }
-    >
-      <DashboardLayoutContent setSidebarWidth={setSidebarWidth}>
-        {children}
-      </DashboardLayoutContent>
+    <SidebarProvider style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
+      <DashboardLayoutContent setSidebarWidth={setSidebarWidth}>{children}</DashboardLayoutContent>
     </SidebarProvider>
   );
 }
 
-type DashboardLayoutContentProps = {
-  children: React.ReactNode;
-  setSidebarWidth: (width: number) => void;
-};
-
-function DashboardLayoutContent({
-  children,
-  setSidebarWidth,
-}: DashboardLayoutContentProps) {
+function DashboardLayoutContent({ children, setSidebarWidth }: { children: React.ReactNode; setSidebarWidth: (width: number) => void }) {
   const { user, logout } = useAuth();
   const [location, setLocation] = useLocation();
-  const { state, toggleSidebar } = useSidebar();
-  const isCollapsed = state === "collapsed";
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
-  const activeMenuItem = menuItems.find(item => item.path === location);
   const isMobile = useIsMobile();
 
   useEffect(() => {
-    if (isCollapsed) {
-      setIsResizing(false);
-    }
-  }, [isCollapsed]);
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
+    const handleMouseMove = (event: MouseEvent) => {
       if (!isResizing) return;
-
-      const sidebarLeft = sidebarRef.current?.getBoundingClientRect().left ?? 0;
-      const newWidth = e.clientX - sidebarLeft;
-      if (newWidth >= MIN_WIDTH && newWidth <= MAX_WIDTH) {
-        setSidebarWidth(newWidth);
-      }
+      const left = sidebarRef.current?.getBoundingClientRect().left ?? 0;
+      const nextWidth = event.clientX - left;
+      if (nextWidth >= MIN_WIDTH && nextWidth <= MAX_WIDTH) setSidebarWidth(nextWidth);
     };
-
-    const handleMouseUp = () => {
-      setIsResizing(false);
-    };
-
+    const handleMouseUp = () => setIsResizing(false);
     if (isResizing) {
       document.addEventListener("mousemove", handleMouseMove);
       document.addEventListener("mouseup", handleMouseUp);
       document.body.style.cursor = "col-resize";
       document.body.style.userSelect = "none";
     }
-
     return () => {
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
@@ -149,113 +106,73 @@ function DashboardLayoutContent({
     };
   }, [isResizing, setSidebarWidth]);
 
+  const goTo = (item: (typeof menuItems)[number]) => {
+    if (item.path) setLocation(item.path);
+    if (item.href) document.querySelector(item.href)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   return (
     <>
-      <div className="relative" ref={sidebarRef}>
-        <Sidebar
-          collapsible="icon"
-          className="border-r-0"
-          disableTransition={isResizing}
-        >
-          <SidebarHeader className="h-16 justify-center">
-            <div className="flex items-center gap-3 px-2 transition-all w-full">
-              <button
-                onClick={toggleSidebar}
-                className="h-8 w-8 flex items-center justify-center hover:bg-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
-                aria-label="Toggle navigation"
-              >
-                <PanelLeft className="h-4 w-4 text-muted-foreground" />
+      <div ref={sidebarRef} className="relative h-screen">
+        <Sidebar collapsible="icon" className="studio-sidebar border-r-0">
+          <SidebarHeader className="h-[86px] justify-center px-4">
+            <div className="flex items-center gap-3 group-data-[collapsible=icon]:justify-center">
+              <button className="brand-mark brand-mark-small" onClick={() => setLocation("/")} aria-label="Ir para a biblioteca"><span /><span /><span /></button>
+              <div className="min-w-0 group-data-[collapsible=icon]:hidden">
+                <p className="font-black tracking-[-0.06em] text-[18px] leading-none">Ebook Studio</p>
+                <p className="mt-1 text-[9px] font-bold tracking-[0.22em] text-muted-foreground">IA EDITORIAL</p>
+              </div>
+              <button onClick={() => document.querySelector("#novo")?.scrollIntoView({ behavior: "smooth" })} className="ml-auto grid h-8 w-8 place-items-center rounded-full bg-[#17191a] text-white transition-transform hover:scale-105 active:scale-95 group-data-[collapsible=icon]:hidden" aria-label="Criar e-book">
+                <Plus className="h-4 w-4" />
               </button>
-              {!isCollapsed ? (
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="font-semibold tracking-tight truncate">
-                    Navigation
-                  </span>
-                </div>
-              ) : null}
             </div>
           </SidebarHeader>
 
-          <SidebarContent className="gap-0">
-            <SidebarMenu className="px-2 py-1">
-              {menuItems.map(item => {
-                const isActive = location === item.path;
-                return (
-                  <SidebarMenuItem key={item.path}>
-                    <SidebarMenuButton
-                      isActive={isActive}
-                      onClick={() => setLocation(item.path)}
-                      tooltip={item.label}
-                      className={`h-10 transition-all font-normal`}
-                    >
-                      <item.icon
-                        className={`h-4 w-4 ${isActive ? "text-primary" : ""}`}
-                      />
-                      <span>{item.label}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
+          <SidebarContent className="px-3 pt-5">
+            <p className="px-3 pb-2 text-[10px] font-bold tracking-[0.18em] text-muted-foreground group-data-[collapsible=icon]:hidden">SEU ESPAÇO</p>
+            <SidebarMenu>
+              {menuItems.map(item => (
+                <SidebarMenuItem key={item.label}>
+                  <SidebarMenuButton isActive={item.path ? location === item.path : false} onClick={() => goTo(item)} tooltip={item.label} className="h-10 rounded-xl px-3 text-[13px] font-medium transition-all data-[active=true]:bg-white data-[active=true]:text-[#111314] data-[active=true]:shadow-[0_4px_20px_rgba(33,38,42,0.06)]">
+                    <item.icon className="h-4 w-4" />
+                    <span>{item.label}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
             </SidebarMenu>
+
+            <div className="sidebar-tip group-data-[collapsible=icon]:hidden">
+              <span className="sidebar-tip-orb" />
+              <p className="font-semibold text-[12px] text-[#303536]">Comece pela ideia.</p>
+              <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">A IA cuida do primeiro rascunho. Você mantém a voz final.</p>
+            </div>
           </SidebarContent>
 
           <SidebarFooter className="p-3">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="flex items-center gap-3 rounded-lg px-1 py-1 hover:bg-accent/50 transition-colors w-full text-left group-data-[collapsible=icon]:justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                  <Avatar className="h-9 w-9 border shrink-0">
-                    <AvatarFallback className="text-xs font-medium">
-                      {user?.name?.charAt(0).toUpperCase()}
-                    </AvatarFallback>
+                <button className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition-colors hover:bg-white/70 group-data-[collapsible=icon]:justify-center">
+                  <Avatar className="h-8 w-8 shrink-0 border border-white/70">
+                    <AvatarFallback className="bg-[#d6e5fb] text-[11px] font-bold text-[#315b85]">{user?.name?.charAt(0).toUpperCase() ?? "U"}</AvatarFallback>
                   </Avatar>
-                  <div className="flex-1 min-w-0 group-data-[collapsible=icon]:hidden">
-                    <p className="text-sm font-medium truncate leading-none">
-                      {user?.name || "-"}
-                    </p>
-                    <p className="text-xs text-muted-foreground truncate mt-1.5">
-                      {user?.email || "-"}
-                    </p>
+                  <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
+                    <p className="truncate text-[12px] font-semibold leading-none">{user?.name || "Sua biblioteca"}</p>
+                    <p className="mt-1 truncate text-[10px] text-muted-foreground">Conta pessoal</p>
                   </div>
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem
-                  onClick={logout}
-                  className="cursor-pointer text-destructive focus:text-destructive"
-                >
-                  <LogOut className="mr-2 h-4 w-4" />
-                  <span>Sign out</span>
-                </DropdownMenuItem>
+              <DropdownMenuContent align="end" className="w-48 rounded-xl">
+                <DropdownMenuItem onClick={logout} className="cursor-pointer text-destructive focus:text-destructive"><LogOut className="mr-2 h-4 w-4" />Sair da conta</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </SidebarFooter>
         </Sidebar>
-        <div
-          className={`absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-primary/20 transition-colors ${isCollapsed ? "hidden" : ""}`}
-          onMouseDown={() => {
-            if (isCollapsed) return;
-            setIsResizing(true);
-          }}
-          style={{ zIndex: 50 }}
-        />
+        <button onMouseDown={() => setIsResizing(true)} aria-label="Redimensionar menu lateral" className="absolute right-0 top-0 z-50 h-full w-1 cursor-col-resize transition-colors hover:bg-[#a6c7ef]" />
       </div>
 
-      <SidebarInset>
-        {isMobile && (
-          <div className="flex border-b h-14 items-center justify-between bg-background/95 px-2 backdrop-blur supports-[backdrop-filter]:backdrop-blur sticky top-0 z-40">
-            <div className="flex items-center gap-2">
-              <SidebarTrigger className="h-9 w-9 rounded-lg bg-background" />
-              <div className="flex items-center gap-3">
-                <div className="flex flex-col gap-1">
-                  <span className="tracking-tight text-foreground">
-                    {activeMenuItem?.label ?? "Menu"}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-        <main className="flex-1 p-4">{children}</main>
+      <SidebarInset className="bg-[#f2f4f5]">
+        {isMobile ? <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-black/[0.05] bg-[#f2f4f5]/90 px-4 backdrop-blur"><SidebarTrigger className="rounded-xl bg-white" /><span className="font-black tracking-[-0.05em]">Ebook Studio</span></header> : null}
+        <main className="min-h-screen">{children}</main>
       </SidebarInset>
     </>
   );
