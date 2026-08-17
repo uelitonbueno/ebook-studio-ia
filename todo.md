@@ -36,3 +36,5 @@
 - [x] Adaptar a exportação para publicar as páginas geradas dos modos Colorir e Historybook.
 - [x] Exibir os downloads gerados de PDF, EPUB e DOCX no novo espaço de trabalho por páginas.
 - [x] Ajustar os controles de exportação para manter PDF, EPUB e DOCX totalmente acessíveis em telas móveis.
+- [x] Retomar automaticamente a geração de imagens pendentes após atualização da página ou falha pontual.
+- [x] Exibir ação para continuar imagens pendentes e mensagens claras quando uma página não puder ser gerada.

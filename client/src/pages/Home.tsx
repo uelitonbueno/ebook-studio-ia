@@ -39,7 +39,8 @@ function Studio() {
   const [tone, setTone] = useState("Acolhedor, simples e cristão");
   const [visualStyle, setVisualStyle] = useState("Ilustração infantil suave, calorosa e editorial");
   const [pageDraft, setPageDraft] = useState<PageDraft | null>(null);
-  const [autoImageQueue, setAutoImageQueue] = useState<number[]>([]);
+  const [autoGenerationEnabled, setAutoGenerationEnabled] = useState(true);
+  const [failedImagePageIds, setFailedImagePageIds] = useState<number[]>([]);
 
   const libraryQuery = trpc.ebook.list.useQuery();
   const projects = libraryQuery.data ?? [];
@@ -61,13 +62,13 @@ function Studio() {
   };
 
   const pageImageMutation = trpc.ebook.generatePageImage.useMutation({
-    onSuccess: async () => {
-      setAutoImageQueue(queue => queue.slice(1));
+    onSuccess: async (_, variables) => {
+      setFailedImagePageIds(ids => ids.filter(id => id !== variables.pageId));
       await refreshBook();
     },
-    onError: async error => {
-      toast.error(error.message);
-      setAutoImageQueue(queue => queue.slice(1));
+    onError: async (error, variables) => {
+      setFailedImagePageIds(ids => ids.includes(variables.pageId) ? ids : [...ids, variables.pageId]);
+      toast.error(`${error.message} A fila continuará nas demais páginas.`);
       await refreshBook();
     },
   });
@@ -76,7 +77,8 @@ function Studio() {
     onSuccess: async project => {
       setSelectedId(project.ebook.id);
       setSelectedPageId(project.pages[0]?.id ?? null);
-      setAutoImageQueue(project.pages.map(page => page.id));
+      setAutoGenerationEnabled(true);
+      setFailedImagePageIds([]);
       toast.success("As páginas foram criadas. Agora estamos ilustrando cada uma delas.");
       await utils.ebook.list.invalidate();
       await utils.ebook.get.invalidate({ ebookId: project.ebook.id });
@@ -108,11 +110,27 @@ function Studio() {
     onError: error => toast.error(error.message),
   });
 
+  const pendingImagePage = useMemo(() => {
+    const now = Date.now();
+    return book?.pages.find(page => {
+      if (page.imageUrl || failedImagePageIds.includes(page.id)) return false;
+      if (page.status !== "generating") return true;
+      return now - new Date(page.updatedAt).getTime() > 45_000;
+    }) ?? null;
+  }, [book?.pages, failedImagePageIds]);
+
   useEffect(() => {
-    const nextPageId = autoImageQueue[0];
-    if (!nextPageId || !selectedId || pageImageMutation.isPending) return;
-    pageImageMutation.mutate({ ebookId: selectedId, pageId: nextPageId });
-  }, [autoImageQueue, selectedId, pageImageMutation]);
+    if (!autoGenerationEnabled || !selectedId || !pendingImagePage || pageImageMutation.isPending) return;
+    pageImageMutation.mutate({ ebookId: selectedId, pageId: pendingImagePage.id });
+  }, [autoGenerationEnabled, selectedId, pendingImagePage?.id, pageImageMutation.isPending]);
+
+  const continuePendingImages = () => {
+    if (!selectedId || !book?.pages.length) return;
+    setAutoGenerationEnabled(true);
+    setFailedImagePageIds([]);
+    const next = book.pages.find(page => !page.imageUrl);
+    if (next && !pageImageMutation.isPending) pageImageMutation.mutate({ ebookId: selectedId, pageId: next.id });
+  };
 
   const makeBook = () => {
     if (idea.trim().length < 12) return;
@@ -134,6 +152,7 @@ function Studio() {
   };
 
   const illustratedPages = book?.pages.filter(page => Boolean(page.imageUrl)).length ?? 0;
+  const remainingImages = book?.pages.filter(page => !page.imageUrl).length ?? 0;
   const reviewedPages = book?.pages.filter(page => page.status === "reviewed").length ?? 0;
   const progress = book?.pages.length ? Math.round(((illustratedPages + reviewedPages) / (book.pages.length * 2)) * 100) : 0;
   const currentType = (book?.ebook.bookType ?? "historybook") as BookType;
@@ -167,7 +186,7 @@ function Studio() {
           <div className="book-heading"><div><p className="studio-kicker">LIVROS / {currentType === "coloring" ? "COLORIR" : "HISTORYBOOK"}</p><h2>{book.ebook.title}</h2><span>{book.ebook.targetAudience ?? "Público a definir"} · {book.ebook.pageCount} páginas</span></div><div className="book-heading-actions"><div className="export-actions"><Button variant="outline" onClick={() => exportMutation.mutate({ ebookId: book.ebook.id, format: "pdf" })} disabled={exportMutation.isPending || !book.pages.length}><Download className="h-4 w-4" />PDF</Button><Button variant="outline" onClick={() => exportMutation.mutate({ ebookId: book.ebook.id, format: "epub" })} disabled={exportMutation.isPending || !book.pages.length}>EPUB</Button><Button variant="outline" onClick={() => exportMutation.mutate({ ebookId: book.ebook.id, format: "docx" })} disabled={exportMutation.isPending || !book.pages.length}>DOCX</Button></div><Button variant="outline" onClick={() => setPendingDeleteId(book.ebook.id)}><Trash2 className="h-4 w-4" />Excluir</Button><Button className="forest-button" onClick={() => generateBookMutation.mutate({ ebookId: book.ebook.id })} disabled={generateBookMutation.isPending}><WandSparkles className="h-4 w-4" />Refazer livro</Button></div></div>
           <nav className="book-tabs"><span className="active">Visão geral</span><span>Páginas</span><span>Ilustrações</span><span>Revisão final</span></nav>
           {book.exports.length ? <div className="recent-exports"><span>ARQUIVOS PRONTOS</span>{book.exports.slice(0, 3).map(file => <a key={file.id} href={file.downloadUrl}><Download className="h-3.5 w-3.5" />Baixar {file.format.toUpperCase()}</a>)}</div> : null}
-          <div className="progress-layout"><section className="journey-card"><div className="journey-card-title"><div><p className="studio-kicker">JORNADA DO LIVRO</p><h3>Progresso editorial</h3></div><strong>{progress}%</strong></div><div className="progress-track"><span style={{ width: `${progress}%` }} /></div><div className="journey-rows"><div><CheckCircle2 className="text-[#3d7860]" /><span><strong>Ideia e estrutura</strong><small>{book.pages.length ? "Etapa preparada" : "Aguardando geração"}</small></span><ChevronRight /></div><div><CheckCircle2 className={illustratedPages === book.pages.length && book.pages.length ? "text-[#3d7860]" : "text-[#c7cfca]"} /><span><strong>Imagens por página</strong><small>{illustratedPages} de {book.pages.length} ilustrações prontas {autoImageQueue.length ? `· ${autoImageQueue.length} em fila` : ""}</small></span><ChevronRight /></div><div><CheckCircle2 className={reviewedPages === book.pages.length && book.pages.length ? "text-[#3d7860]" : "text-[#c7cfca]"} /><span><strong>Revisão final</strong><small>{reviewedPages} páginas revisadas manualmente</small></span><ChevronRight /></div></div></section><aside className="content-summary"><p className="studio-kicker">CONTEÚDO</p><h3>Resumo</h3><div><span><strong>{book.pages.length}</strong><small>páginas</small></span><span><strong>{currentType === "coloring" ? illustratedPages : book.pages.filter(page => Boolean(page.content)).length}</strong><small>{currentType === "coloring" ? "desenhos prontos" : "textos gerados"}</small></span><span><strong>{illustratedPages}</strong><small>imagens geradas</small></span><span><strong>{reviewedPages}</strong><small>páginas revisadas</small></span></div></aside></div>
+          <div className="progress-layout"><section className="journey-card"><div className="journey-card-title"><div><p className="studio-kicker">JORNADA DO LIVRO</p><h3>Progresso editorial</h3></div><strong>{progress}%</strong></div><div className="progress-track"><span style={{ width: `${progress}%` }} /></div><div className="journey-rows"><div><CheckCircle2 className="text-[#3d7860]" /><span><strong>Ideia e estrutura</strong><small>{book.pages.length ? "Etapa preparada" : "Aguardando geração"}</small></span><ChevronRight /></div><div><CheckCircle2 className={illustratedPages === book.pages.length && book.pages.length ? "text-[#3d7860]" : "text-[#c7cfca]"} /><span><strong>Imagens por página</strong><small>{illustratedPages} de {book.pages.length} ilustrações prontas {remainingImages ? `· ${remainingImages} pendentes` : ""}</small>{remainingImages ? <Button variant="outline" className="resume-images-button" onClick={continuePendingImages} disabled={pageImageMutation.isPending}><RotateCcw className="h-3.5 w-3.5" />{pageImageMutation.isPending ? "Gerando..." : failedImagePageIds.length ? `Tentar ${failedImagePageIds.length} pendente${failedImagePageIds.length > 1 ? "s" : ""}` : "Continuar imagens"}</Button> : null}</span><ChevronRight /></div><div><CheckCircle2 className={reviewedPages === book.pages.length && book.pages.length ? "text-[#3d7860]" : "text-[#c7cfca]"} /><span><strong>Revisão final</strong><small>{reviewedPages} páginas revisadas manualmente</small></span><ChevronRight /></div></div></section><aside className="content-summary"><p className="studio-kicker">CONTEÚDO</p><h3>Resumo</h3><div><span><strong>{book.pages.length}</strong><small>páginas</small></span><span><strong>{currentType === "coloring" ? illustratedPages : book.pages.filter(page => Boolean(page.content)).length}</strong><small>{currentType === "coloring" ? "desenhos prontos" : "textos gerados"}</small></span><span><strong>{illustratedPages}</strong><small>imagens geradas</small></span><span><strong>{reviewedPages}</strong><small>páginas revisadas</small></span></div></aside></div>
           {!book.pages.length ? <div className="generation-empty"><FileImage className="h-8 w-8" /><h3>Seu livro está pronto para nascer.</h3><p>A IA criará todas as páginas e iniciará as ilustrações automaticamente.</p><Button className="forest-button" onClick={() => generateBookMutation.mutate({ ebookId: book.ebook.id })}><Sparkles className="h-4 w-4" />{bookTypeCopy[currentType].action}</Button></div> : <div className="pages-workspace"><aside className="page-rail"><div className="page-rail-head"><span>PÁGINAS</span><strong>{book.pages.length}</strong></div>{book.pages.map(page => <button key={page.id} onClick={() => setSelectedPageId(page.id)} className={cn("page-thumb", activePage?.id === page.id && "selected")}><span>{String(page.position).padStart(2, "0")}</span>{page.imageUrl ? <img src={page.imageUrl} alt={`Página ${page.position}`} /> : <div className="page-thumb-empty">{page.status === "generating" ? <Loader2 className="animate-spin" /> : <ImagePlus />}</div>}<small>{page.title}</small></button>)}</aside><article className="page-review-panel">{activePage && pageDraft ? <><div className="page-review-top"><div><p className="studio-kicker">PÁGINA {String(activePage.position).padStart(2, "0")}</p><Input value={pageDraft.title} onChange={event => setPageDraft({ ...pageDraft, title: event.target.value })} className="page-title-input" /></div><Button variant="outline" onClick={savePage} disabled={updatePageMutation.isPending}><Check className="h-4 w-4" />Marcar revisada</Button></div><div className="page-canvas">{activePage.imageUrl ? <img src={activePage.imageUrl} alt={activePage.title} /> : <div className="image-waiting">{activePage.status === "generating" ? <Loader2 className="h-7 w-7 animate-spin" /> : <ImagePlus className="h-7 w-7" />}<strong>{activePage.status === "generating" ? "Criando ilustração..." : "Ilustração aguardando geração"}</strong><span>A imagem será criada automaticamente ou você pode iniciar agora.</span></div>}</div><div className="image-controls"><Textarea value={pageDraft.imagePrompt} onChange={event => setPageDraft({ ...pageDraft, imagePrompt: event.target.value })} className="image-prompt-input" placeholder="Direção da imagem" /><Button className="forest-button" disabled={pageImageMutation.isPending} onClick={() => { savePage(); pageImageMutation.mutate({ ebookId: book.ebook.id, pageId: pageDraft.id, direction: pageDraft.imagePrompt }); }}><RotateCcw className="h-4 w-4" />{activePage.imageUrl ? "Regenerar figura" : "Gerar figura"}</Button></div>{currentType === "historybook" ? <div className="story-text-editor"><p className="studio-kicker">TEXTO DA PÁGINA</p><RichTextEditor content={pageDraft.content} onChange={content => setPageDraft({ ...pageDraft, content })} placeholder="Escreva ou ajuste o texto desta página..." /></div> : <div className="coloring-note"><Palette className="h-5 w-5" /><div><strong>Página para colorir</strong><p>Esta página exibirá somente o título curto e o desenho preto e branco. Não há narrativa.</p></div></div>}</> : null}</article></div>}
         </section>
       )}
