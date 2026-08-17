@@ -9,6 +9,7 @@ export type EditorialBrief = {
   genre: string | null;
   tone: string | null;
   targetAudience: string | null;
+  visualStyle?: string | null;
 };
 
 export const outlineSchema = z.object({
@@ -29,18 +30,24 @@ export const discoverySchema = z.object({
   suggestedVisualStyle: z.string().min(3).max(500),
   intentions: z.array(z.string().min(8).max(500)).min(2).max(6),
   themes: z.array(z.string().min(2).max(160)).min(3).max(10),
-  titleSuggestions: z.array(z.object({
-    title: z.string().min(2).max(255),
-    subtitle: z.string().max(500),
-    rationale: z.string().min(12).max(600),
-  })).min(3).max(5),
-  structureSuggestions: z.array(z.object({
-    title: z.string().min(2).max(255),
-    purpose: z.string().min(12).max(900),
-  })).min(3).max(8),
+  titleSuggestions: z.array(z.object({ title: z.string().min(2).max(255), subtitle: z.string().max(500), rationale: z.string().min(12).max(600) })).min(3).max(5),
+  structureSuggestions: z.array(z.object({ title: z.string().min(2).max(255), purpose: z.string().min(12).max(900) })).min(3).max(8),
   coverDirections: z.array(z.string().min(12).max(800)).min(2).max(4),
   illustrationDirections: z.array(z.string().min(12).max(800)).min(2).max(5),
   keywords: z.array(z.string().min(2).max(100)).min(3).max(10),
+});
+
+export const pagePlanSchema = z.object({
+  title: z.string().min(2).max(255),
+  content: z.string().max(8000),
+  imagePrompt: z.string().min(20).max(2400),
+});
+
+export const bookPlanSchema = z.object({
+  title: z.string().min(2).max(255),
+  subtitle: z.string().max(500),
+  positioning: z.string().min(20).max(1200),
+  pages: z.array(pagePlanSchema).min(4).max(24),
 });
 
 export type DiscoveryInput = {
@@ -86,6 +93,21 @@ Preferências: gênero ${brief.genre ?? "a definir"}; tom ${brief.tone ?? "claro
 Objetivo: ${brief.objective ?? "Criar um e-book útil e publicável."}
 Referências e regras do autor: ${brief.referenceNotes ?? "Nenhuma informação adicional."}
 Crie de 5 a 7 capítulos progressivos. Cada resumo deve orientar um capítulo substancial, em no máximo três parágrafos curtos. O título deve ser específico e publicável. Explique o posicionamento editorial em 2 ou 3 frases: promessa ao leitor, recorte único e diferenciação da obra.`;
+}
+
+export function buildBookPlanPrompt(brief: EditorialBrief & { bookType: "historybook" | "coloring"; pageCount: number }) {
+  const shared = `Livro: ${brief.title}\nTema e briefing: ${brief.idea}\nPúblico: ${brief.targetAudience ?? "famílias cristãs"}\nTom: ${brief.tone ?? "acolhedor"}\nObjetivo: ${brief.objective ?? "criar uma experiência significativa"}\nReferências: ${brief.referenceNotes ?? "não informadas"}\nEstilo visual: ${brief.visualStyle ?? "ilustração editorial infantil"}`;
+  if (brief.bookType === "coloring") {
+    return `${shared}\n\nCrie exatamente ${brief.pageCount} páginas para um LIVRO CRISTÃO PARA COLORIR. Não escreva história, narração, diálogo, versículo ou atividade. Cada página deve ter apenas um título curto de cena (por exemplo, "Adão e Eva") e um imagePrompt muito detalhado para uma imagem de colorir. O campo content deve ser uma string vazia em todas as páginas. Cada prompt deve pedir line art infantil preto e branco, traços limpos e grossos, espaços amplos para colorir, sem sombras, sem tons de cinza, sem moldura, sem texto, sem letras, sem marcas. Varie as cenas de acordo com o tema sem inventar fatos bíblicos.`;
+  }
+  return `${shared}\n\nCrie exatamente ${brief.pageCount} páginas de um HISTORYBOOK infantil cristão. Para cada página, escreva texto original, claro e adequado à idade indicada, entre 70 e 150 palavras, e um imagePrompt para uma ilustração coerente com aquela página. Toda a história deve ter começo, desenvolvimento e final. As imagens não podem conter texto, letras, logotipos ou marcas. Preserve princípios cristãos com naturalidade e não invente citações bíblicas.`;
+}
+
+export function buildPageImagePrompt(book: EditorialBrief & { bookType: "historybook" | "coloring" }, page: { title: string; content: string | null; imagePrompt: string }) {
+  if (book.bookType === "coloring") {
+    return `Página de livro infantil cristão para colorir, cena: ${page.title}. Direção: ${page.imagePrompt}. Desenho em line art preto e branco, contornos pretos limpos, espessos e fechados, grandes áreas em branco para colorir, composição simples e amigável para crianças, sem sombras, sem cinza, sem cor, sem preenchimento, sem moldura, sem texto, sem letras, sem números, sem logotipo.`;
+  }
+  return `Ilustração de página para o Historybook infantil cristão "${book.title}". Cena: ${page.title}. Texto da página: ${page.content ?? ""}. Direção visual: ${page.imagePrompt}. Estilo: ${book.visualStyle ?? "ilustração infantil editorial, calorosa e delicada"}. Imagem narrativa coerente com o texto, segura para crianças, sem palavras, sem letras, sem logotipo, sem marca.`;
 }
 
 export function buildChapterPrompt(brief: EditorialBrief, chapter: { position: number; title: string; summary: string | null }) {

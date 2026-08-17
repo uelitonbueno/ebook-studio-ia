@@ -2,12 +2,14 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   Chapter,
+  BookPage,
   Ebook,
   EbookAsset,
   EbookExport,
   InsertUser,
   User,
   chapters,
+  bookPages,
   ebookAssets,
   ebookExports,
   ebooks,
@@ -63,6 +65,7 @@ export async function getUserByOpenId(openId: string) {
 export type EbookDetails = {
   ebook: Ebook;
   chapters: Chapter[];
+  pages: BookPage[];
   assets: EbookAsset[];
   exports: EbookExport[];
 };
@@ -76,6 +79,8 @@ export type CreateEbookInput = {
   referenceNotes?: string;
   discoveryAnalysis?: string;
   genre?: string;
+  bookType?: "historybook" | "coloring";
+  pageCount?: number;
   tone?: string;
   targetAudience?: string;
   visualStyle?: string;
@@ -95,6 +100,8 @@ export async function createEbook(input: CreateEbookInput) {
     referenceNotes: input.referenceNotes ?? null,
     discoveryAnalysis: input.discoveryAnalysis ?? null,
     genre: input.genre ?? null,
+    bookType: input.bookType ?? "historybook",
+    pageCount: input.pageCount ?? 10,
     tone: input.tone ?? null,
     targetAudience: input.targetAudience ?? null,
     visualStyle: input.visualStyle ?? "Editorial minimalista",
@@ -114,18 +121,19 @@ export async function getEbookDetails(ebookId: number, userId: number): Promise<
   const ebook = result[0] as Ebook | undefined;
   if (!ebook) return null;
 
-  const [chapterRows, assetRows, exportRows] = await Promise.all([
+  const [chapterRows, pageRows, assetRows, exportRows] = await Promise.all([
     db.select().from(chapters).where(eq(chapters.ebookId, ebookId)).orderBy(asc(chapters.position)),
+    db.select().from(bookPages).where(eq(bookPages.ebookId, ebookId)).orderBy(asc(bookPages.position)),
     db.select().from(ebookAssets).where(eq(ebookAssets.ebookId, ebookId)).orderBy(desc(ebookAssets.createdAt)),
     db.select().from(ebookExports).where(eq(ebookExports.ebookId, ebookId)).orderBy(desc(ebookExports.createdAt)),
   ]);
-  return { ebook, chapters: chapterRows, assets: assetRows, exports: exportRows };
+  return { ebook, chapters: chapterRows, pages: pageRows, assets: assetRows, exports: exportRows };
 }
 
 export async function updateEbook(
   ebookId: number,
   userId: number,
-  input: Partial<Pick<Ebook, "title" | "subtitle" | "objective" | "referenceNotes" | "discoveryAnalysis" | "positioning" | "genre" | "tone" | "targetAudience" | "visualStyle" | "coverUrl" | "status">>,
+  input: Partial<Pick<Ebook, "title" | "subtitle" | "objective" | "referenceNotes" | "discoveryAnalysis" | "positioning" | "genre" | "bookType" | "pageCount" | "tone" | "targetAudience" | "visualStyle" | "coverUrl" | "status">>,
 ) {
   const db = requireDb(await getDb());
   await db.update(ebooks).set(input).where(and(eq(ebooks.id, ebookId), eq(ebooks.userId, userId)));
@@ -170,6 +178,33 @@ export async function updateChapter(
   await db.update(chapters).set(input).where(eq(chapters.id, chapterId));
   const result = await db.select().from(chapters).where(eq(chapters.id, chapterId)).limit(1);
   return result[0] as Chapter | undefined;
+}
+
+export async function replaceBookPages(ebookId: number, userId: number, drafts: Array<{ title: string; content?: string; imagePrompt: string }>) {
+  const db = requireDb(await getDb());
+  const owned = await getEbookDetails(ebookId, userId);
+  if (!owned) return null;
+  await db.delete(bookPages).where(eq(bookPages.ebookId, ebookId));
+  if (drafts.length) {
+    await db.insert(bookPages).values(drafts.map((page, index) => ({
+      ebookId,
+      position: index + 1,
+      title: page.title,
+      content: page.content ?? "",
+      imagePrompt: page.imagePrompt,
+      status: "draft" as const,
+    })));
+  }
+  return getEbookDetails(ebookId, userId);
+}
+
+export async function updateBookPage(pageId: number, ebookId: number, userId: number, input: Partial<Pick<BookPage, "title" | "content" | "imagePrompt" | "imageUrl" | "status">>) {
+  const db = requireDb(await getDb());
+  const owned = await getEbookDetails(ebookId, userId);
+  if (!owned?.pages.some(page => page.id === pageId)) return null;
+  await db.update(bookPages).set(input).where(eq(bookPages.id, pageId));
+  const result = await db.select().from(bookPages).where(eq(bookPages.id, pageId)).limit(1);
+  return result[0] as BookPage | undefined;
 }
 
 export async function createEbookAsset(input: {

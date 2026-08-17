@@ -24,6 +24,8 @@ export const ebooks = mysqlTable("ebooks", {
   discoveryAnalysis: mediumtext("discoveryAnalysis"),
   positioning: text("positioning"),
   genre: varchar("genre", { length: 120 }),
+  bookType: mysqlEnum("bookType", ["historybook", "coloring"]).default("historybook").notNull(),
+  pageCount: int("pageCount").default(10).notNull(),
   tone: text("tone"),
   targetAudience: text("targetAudience"),
   visualStyle: text("visualStyle"),
@@ -40,6 +42,19 @@ export const chapters = mysqlTable("chapters", {
   title: varchar("title", { length: 255 }).notNull(),
   summary: text("summary"),
   content: text("content"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const bookPages = mysqlTable("bookPages", {
+  id: int("id").autoincrement().primaryKey(),
+  ebookId: int("ebookId").notNull().references(() => ebooks.id, { onDelete: "cascade" }),
+  position: int("position").notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  content: mediumtext("content"),
+  imagePrompt: text("imagePrompt").notNull(),
+  imageUrl: text("imageUrl"),
+  status: mysqlEnum("status", ["draft", "generating", "ready", "reviewed"]).default("draft").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -63,27 +78,25 @@ export const ebookExports = mysqlTable("ebookExports", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
-export const usersRelations = relations(users, ({ many }) => ({
-  ebooks: many(ebooks),
-}));
-
+export const usersRelations = relations(users, ({ many }) => ({ ebooks: many(ebooks) }));
 export const ebooksRelations = relations(ebooks, ({ one, many }) => ({
   user: one(users, { fields: [ebooks.userId], references: [users.id] }),
   chapters: many(chapters),
+  pages: many(bookPages),
   assets: many(ebookAssets),
   exports: many(ebookExports),
 }));
-
 export const chaptersRelations = relations(chapters, ({ one, many }) => ({
   ebook: one(ebooks, { fields: [chapters.ebookId], references: [ebooks.id] }),
   assets: many(ebookAssets),
 }));
-
+export const bookPagesRelations = relations(bookPages, ({ one }) => ({
+  ebook: one(ebooks, { fields: [bookPages.ebookId], references: [ebooks.id] }),
+}));
 export const ebookAssetsRelations = relations(ebookAssets, ({ one }) => ({
   ebook: one(ebooks, { fields: [ebookAssets.ebookId], references: [ebooks.id] }),
   chapter: one(chapters, { fields: [ebookAssets.chapterId], references: [chapters.id] }),
 }));
-
 export const ebookExportsRelations = relations(ebookExports, ({ one }) => ({
   ebook: one(ebooks, { fields: [ebookExports.ebookId], references: [ebooks.id] }),
 }));
@@ -92,5 +105,6 @@ export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type Ebook = typeof ebooks.$inferSelect;
 export type Chapter = typeof chapters.$inferSelect;
+export type BookPage = typeof bookPages.$inferSelect;
 export type EbookAsset = typeof ebookAssets.$inferSelect;
 export type EbookExport = typeof ebookExports.$inferSelect;

@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { createEbookAsset, createEbookExport, createEbook, deleteEbook, getEbookDetails, listEbooksByUser, replaceChapters, updateChapter, updateEbook } from "../db";
-import { buildChapterPrompt, buildDiscoveryPrompt, buildOutlinePrompt, buildRewritePrompt, discoverySchema, outlineSchema } from "../ebookRules";
+import { createEbookAsset, createEbookExport, createEbook, deleteEbook, getEbookDetails, listEbooksByUser, replaceBookPages, replaceChapters, updateBookPage, updateChapter, updateEbook } from "../db";
+import { bookPlanSchema, buildBookPlanPrompt, buildChapterPrompt, buildDiscoveryPrompt, buildOutlinePrompt, buildPageImagePrompt, buildRewritePrompt, discoverySchema, outlineSchema } from "../ebookRules";
 import { buildEbookExportBuffer, EbookExportFormat } from "../exporters";
 import { generateImage } from "../_core/imageGeneration";
 import { invokeLLM, listLLMModels } from "../_core/llm";
@@ -18,6 +18,8 @@ const projectInput = z.object({
   objective: z.string().max(30000).optional(),
   referenceNotes: z.string().max(30000).optional(),
   discoveryAnalysis: z.string().max(30000).optional(),
+  bookType: z.enum(["historybook", "coloring"]).default("historybook"),
+  pageCount: z.number().int().min(4).max(24).default(10),
 });
 
 const discoveryInput = projectInput.pick({ idea: true, genre: true, tone: true, targetAudience: true, visualStyle: true, objective: true, referenceNotes: true });
@@ -89,6 +91,25 @@ const discoveryResponseFormat = {
         keywords: { type: "array", items: { type: "string" } },
       },
       required: ["editorialSummary", "refinedIdea", "suggestedAudience", "suggestedTone", "suggestedVisualStyle", "intentions", "themes", "titleSuggestions", "structureSuggestions", "coverDirections", "illustrationDirections", "keywords"],
+      additionalProperties: false,
+    },
+  },
+};
+
+const bookPlanResponseFormat = {
+  type: "json_schema" as const,
+  json_schema: {
+    name: "book_page_plan",
+    strict: true,
+    schema: {
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        subtitle: { type: "string" },
+        positioning: { type: "string" },
+        pages: { type: "array", items: { type: "object", properties: { title: { type: "string" }, content: { type: "string" }, imagePrompt: { type: "string" } }, required: ["title", "content", "imagePrompt"], additionalProperties: false } },
+      },
+      required: ["title", "subtitle", "positioning", "pages"],
       additionalProperties: false,
     },
   },
@@ -179,6 +200,63 @@ export const ebookRouter = router({
     }
   }),
 
+  generateBookPages: protectedProcedure.input(z.object({ ebookId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    const project = await getOwnedEbook(input.ebookId, ctx.user.id);
+    await updateEbook(input.ebookId, ctx.user.id, { status: "generating" });
+    try {
+      const model = await selectWritingModel();
+      const result = await invokeLLM({
+        model,
+        messages: [
+          { role: "system", content: "Você é uma editora brasileira especializada em livros cristãos para crianças. Crie somente material original, culturalmente respeitoso e seguro para crianças. Retorne exclusivamente o JSON solicitado." },
+          { role: "user", content: buildBookPlanPrompt(project.ebook) },
+        ],
+        response_format: bookPlanResponseFormat,
+      });
+      const raw = result.choices[0]?.message.content;
+      const plan = bookPlanSchema.parse(JSON.parse(typeof raw === "string" ? raw : "{}"));
+      if (plan.pages.length < project.ebook.pageCount) throw new TRPCError({ code: "BAD_GATEWAY", message: "A IA não conseguiu preparar todas as páginas. Tente gerar o livro novamente." });
+      const pages = plan.pages.slice(0, project.ebook.pageCount).map(page => ({ ...page, content: project.ebook.bookType === "coloring" ? "" : page.content }));
+      await updateEbook(input.ebookId, ctx.user.id, { title: plan.title, subtitle: plan.subtitle, positioning: plan.positioning, status: "ready" });
+      await replaceBookPages(input.ebookId, ctx.user.id, pages);
+      return getOwnedEbook(input.ebookId, ctx.user.id);
+    } catch (error) {
+      await updateEbook(input.ebookId, ctx.user.id, { status: "draft" });
+      if (error instanceof TRPCError) throw error;
+      throw new TRPCError({ code: "BAD_GATEWAY", message: "Não foi possível montar o livro agora. Tente novamente em instantes." });
+    }
+  }),
+
+  updateBookPage: protectedProcedure.input(z.object({
+    ebookId: z.number().int().positive(),
+    pageId: z.number().int().positive(),
+    title: z.string().min(2).max(255).optional(),
+    content: z.string().max(100000).nullable().optional(),
+    imagePrompt: z.string().min(20).max(6000).optional(),
+    status: z.enum(["draft", "generating", "ready", "reviewed"]).optional(),
+  })).mutation(async ({ ctx, input }) => {
+    const { ebookId, pageId, ...changes } = input;
+    const page = await updateBookPage(pageId, ebookId, ctx.user.id, changes);
+    if (!page) throw new TRPCError({ code: "NOT_FOUND", message: "Página não encontrada." });
+    return page;
+  }),
+
+  generatePageImage: protectedProcedure.input(z.object({ ebookId: z.number().int().positive(), pageId: z.number().int().positive(), direction: z.string().max(6000).optional() })).mutation(async ({ ctx, input }) => {
+    const project = await getOwnedEbook(input.ebookId, ctx.user.id);
+    const page = project.pages.find(item => item.id === input.pageId);
+    if (!page) throw new TRPCError({ code: "NOT_FOUND", message: "Página não encontrada." });
+    await updateBookPage(page.id, input.ebookId, ctx.user.id, { status: "generating" });
+    const prompt = `${buildPageImagePrompt(project.ebook, page)} Direção adicional do autor: ${input.direction ?? "seguir o conteúdo e a proposta visual da página"}.`;
+    try {
+      const generated = await generateImage({ prompt, quality: "high" });
+      if (!generated.url) throw new Error("Imagem ausente");
+      return await updateBookPage(page.id, input.ebookId, ctx.user.id, { imageUrl: generated.url, status: "ready", imagePrompt: input.direction?.trim() || page.imagePrompt });
+    } catch {
+      await updateBookPage(page.id, input.ebookId, ctx.user.id, { status: "draft" });
+      throw new TRPCError({ code: "BAD_GATEWAY", message: "Não foi possível gerar a imagem desta página. Tente novamente." });
+    }
+  }),
+
   generateChapter: protectedProcedure.input(z.object({ ebookId: z.number().int().positive(), chapterId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
     const project = await getOwnedEbook(input.ebookId, ctx.user.id);
     const chapter = project.chapters.find(item => item.id === input.chapterId);
@@ -259,8 +337,9 @@ export const ebookRouter = router({
 
   export: protectedProcedure.input(z.object({ ebookId: z.number().int().positive(), format: z.enum(["pdf", "epub", "docx"]) })).mutation(async ({ ctx, input }) => {
     const project = await getOwnedEbook(input.ebookId, ctx.user.id);
-    if (!project.chapters.length) throw new TRPCError({ code: "BAD_REQUEST", message: "Gere ao menos o sumário antes de exportar." });
-    const buffer = await buildEbookExportBuffer(input.format as EbookExportFormat, project.ebook, project.chapters);
+    const publishablePages = project.pages.length ? project.pages : project.chapters;
+    if (!publishablePages.length) throw new TRPCError({ code: "BAD_REQUEST", message: "Gere as páginas ou a estrutura do livro antes de exportar." });
+    const buffer = await buildEbookExportBuffer(input.format as EbookExportFormat, project.ebook, publishablePages);
     const mimeTypes = { pdf: "application/pdf", epub: "application/epub+zip", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" };
     const { key, url } = await storagePut(`ebooks/${ctx.user.id}/exports/${safeFilename(project.ebook.title)}.${input.format}`, buffer, mimeTypes[input.format]);
     return createEbookExport({ ebookId: input.ebookId, format: input.format, storageKey: key, downloadUrl: url });

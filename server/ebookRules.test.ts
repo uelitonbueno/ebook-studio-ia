@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildChapterPrompt, buildDiscoveryPrompt, buildOutlinePrompt, buildRewritePrompt, discoverySchema, outlineSchema } from "./ebookRules";
+import { bookPlanSchema, buildBookPlanPrompt, buildChapterPrompt, buildDiscoveryPrompt, buildOutlinePrompt, buildPageImagePrompt, buildRewritePrompt, discoverySchema, outlineSchema } from "./ebookRules";
 
 const brief = {
   title: "Escrever sem Pressa",
@@ -98,5 +98,31 @@ describe("regras editoriais", () => {
     const prompt = buildDiscoveryPrompt({ ...brief, idea: longIdea, objective: longIdea, referenceNotes: longIdea });
     expect(prompt).toContain(longIdea);
     expect(prompt.length).toBeGreaterThan(20000);
+  });
+
+  it("diferencia as regras de Colorir e Historybook em páginas e imagens", () => {
+    const coloringPlan = buildBookPlanPrompt({ ...brief, bookType: "coloring", pageCount: 8, visualStyle: "Line art infantil" });
+    const storyPlan = buildBookPlanPrompt({ ...brief, bookType: "historybook", pageCount: 8, visualStyle: "Aquarela infantil" });
+    const coloringImage = buildPageImagePrompt({ ...brief, bookType: "coloring", visualStyle: "Line art infantil" }, { title: "Adão e Eva", content: "", imagePrompt: "Jardim amplo com animais amigáveis." });
+
+    expect(coloringPlan).toContain("Não escreva história");
+    expect(storyPlan).toContain("HISTORYBOOK");
+    expect(coloringImage).toContain("preto e branco");
+    expect(coloringImage).toContain("sem texto");
+  });
+
+  it("valida um plano completo de páginas para o livro automatizado", () => {
+    const result = bookPlanSchema.safeParse({
+      title: "A Coragem de Samuel",
+      subtitle: "Uma história de fé e amizade",
+      positioning: "Uma história infantil cristã sobre coragem, gentileza e confiança em Deus nas pequenas escolhas do dia.",
+      pages: [
+        { title: "Uma manhã diferente", content: "Samuel acordou cedo e percebeu que aquele seria um dia especial.", imagePrompt: "Samuel abrindo a janela em um quarto infantil iluminado pelo amanhecer." },
+        { title: "O novo colega", content: "Na escola, Samuel viu um colega novo sentado sozinho no pátio.", imagePrompt: "Crianças no pátio da escola, Samuel observando um colega novo com expressão gentil." },
+        { title: "Um gesto de amizade", content: "Samuel respirou fundo, fez uma oração breve e foi convidar o colega para brincar.", imagePrompt: "Duas crianças sorrindo e dividindo brinquedos em um pátio ensolarado." },
+        { title: "De volta para casa", content: "Naquela noite, Samuel agradeceu a Deus por lhe dar coragem para ser amigo.", imagePrompt: "Família em momento de oração noturna, ambiente acolhedor e sereno." },
+      ],
+    });
+    expect(result.success).toBe(true);
   });
 });

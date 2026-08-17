@@ -26,3 +26,13 @@
 - [x] Ajustar os limites dos resumos sugeridos pela IA para impedir falhas de validação na descoberta.
 - [x] Converter falhas de análise em mensagens amigáveis, sem exibir JSON técnico ao autor.
 - [x] Adicionar botão de exclusão de projetos na biblioteca com confirmação explícita antes da remoção.
+- [x] Criar dois tipos de projeto: Livro para Colorir e Historybook, selecionáveis no início do fluxo.
+- [x] Modelar páginas de livro com texto, título de página, prompt, imagem e estado de revisão.
+- [x] Implementar Livro para Colorir por tema e quantidade de páginas, gerando apenas título curto e desenho para pintar em cada página.
+- [x] Implementar Historybook com história completa, texto por página e ilustrações geradas automaticamente para revisão posterior.
+- [x] Permitir regenerar individualmente as ilustrações de cada página para adequá-las ao texto.
+- [x] Criar uma visão de progresso e revisão final por páginas, com métricas de conteúdo e imagens geradas.
+- [x] Atualizar a identidade do estúdio para a referência enviada, com paleta creme, verde profundo, serif editorial e cartões organizacionais.
+- [x] Adaptar a exportação para publicar as páginas geradas dos modos Colorir e Historybook.
+- [x] Exibir os downloads gerados de PDF, EPUB e DOCX no novo espaço de trabalho por páginas.
+- [x] Ajustar os controles de exportação para manter PDF, EPUB e DOCX totalmente acessíveis em telas móveis.
