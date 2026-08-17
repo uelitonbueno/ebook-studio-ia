@@ -14,3 +14,6 @@
 - [x] Persistir e exibir o posicionamento editorial gerado pela IA para cada projeto.
 - [x] Adicionar reescrita de capítulo guiada por uma instrução do usuário e mensagens de erro compreensíveis.
 - [x] Exibir ilustrações internas geradas, vinculadas ao capítulo correspondente, no painel de criação.
+- [x] Definir a categoria cristã como padrão e opção explícita ao criar um novo e-book.
+- [x] Limitar a altura do campo de ideia e habilitar rolagem interna para descrições longas.
+- [x] Manter o botão de criar projeto acessível no modal, inclusive em telas pequenas e textos extensos.

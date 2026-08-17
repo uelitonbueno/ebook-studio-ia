@@ -28,7 +28,7 @@ function Studio() {
   const [activeChapterId, setActiveChapterId] = useState<number | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [idea, setIdea] = useState("");
-  const [genre, setGenre] = useState("Não ficção");
+  const [genre, setGenre] = useState("Ideias cristãs");
   const [tone, setTone] = useState("Clareza e proximidade");
   const [audience, setAudience] = useState("Leitores em busca de orientação prática");
   const [visualStyle, setVisualStyle] = useState("Minimalismo escandinavo");
@@ -202,17 +202,17 @@ function Studio() {
       )}
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="create-dialog sm:max-w-[600px]">
+        <DialogContent className="create-dialog max-h-[calc(100dvh-24px)] overflow-y-auto sm:max-w-[600px]">
           <DialogHeader><p className="eyebrow">NOVO E-BOOK</p><DialogTitle>O que você quer transformar em livro?</DialogTitle><DialogDescription>Descreva a ideia em poucas frases. Depois, a IA propõe título, estrutura e capítulos para você editar.</DialogDescription></DialogHeader>
           <form onSubmit={submitCreate} className="create-form">
-            <div className="space-y-2"><Label htmlFor="idea">A ideia central</Label><Textarea id="idea" value={idea} onChange={event => setIdea(event.target.value)} placeholder="Ex.: Um guia para pessoas criativas que desejam retomar a escrita com menos pressão e mais consistência." className="min-h-32 resize-none rounded-xl border-[#d9dee0] bg-[#f8f9f9] p-4 text-[14px] shadow-none focus-visible:ring-[#a8c7ee]" /></div>
+            <div className="space-y-2"><Label htmlFor="idea">A ideia central</Label><Textarea id="idea" value={idea} onChange={event => setIdea(event.target.value)} placeholder="Ex.: Um e-book devocional para pessoas que desejam fortalecer a fé e cultivar uma rotina de oração." className="h-32 min-h-32 max-h-32 resize-none overflow-y-auto rounded-xl border-[#d9dee0] bg-[#f8f9f9] p-4 text-[14px] shadow-none focus-visible:ring-[#a8c7ee]" /></div>
             <div className="create-form-grid">
-              <div className="space-y-2"><Label>Categoria</Label><Select value={genre} onValueChange={setGenre}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Não ficção">Não ficção</SelectItem><SelectItem value="Ficção">Ficção</SelectItem><SelectItem value="Desenvolvimento pessoal">Desenvolvimento pessoal</SelectItem><SelectItem value="Negócios">Negócios</SelectItem></SelectContent></Select></div>
+              <div className="space-y-2"><Label>Categoria</Label><Select value={genre} onValueChange={setGenre}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Ideias cristãs">Ideias cristãs</SelectItem><SelectItem value="Não ficção">Não ficção</SelectItem><SelectItem value="Ficção">Ficção</SelectItem><SelectItem value="Desenvolvimento pessoal">Desenvolvimento pessoal</SelectItem><SelectItem value="Negócios">Negócios</SelectItem></SelectContent></Select></div>
               <div className="space-y-2"><Label>Tom</Label><Select value={tone} onValueChange={setTone}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Clareza e proximidade">Clareza e proximidade</SelectItem><SelectItem value="Inspirador">Inspirador</SelectItem><SelectItem value="Técnico e objetivo">Técnico e objetivo</SelectItem><SelectItem value="Poético e sensível">Poético e sensível</SelectItem></SelectContent></Select></div>
             </div>
             <div className="create-form-grid"><div className="space-y-2"><Label htmlFor="audience">Para quem</Label><Input id="audience" value={audience} onChange={event => setAudience(event.target.value)} /></div><div className="space-y-2"><Label>Estilo visual</Label><Select value={visualStyle} onValueChange={setVisualStyle}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Minimalismo escandinavo">Minimalismo escandinavo</SelectItem><SelectItem value="Editorial contemporâneo">Editorial contemporâneo</SelectItem><SelectItem value="Ilustração orgânica">Ilustração orgânica</SelectItem></SelectContent></Select></div></div>
             {createMutation.error ? <p className="text-sm text-destructive">{createMutation.error.message}</p> : null}
-            <div className="mt-2 flex justify-end"><Button type="submit" disabled={createMutation.isPending || idea.trim().length < 12} className="new-book-button">{createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}Criar projeto</Button></div>
+            <div className="create-dialog-actions"><Button type="submit" disabled={createMutation.isPending || idea.trim().length < 12} className="new-book-button">{createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}Criar projeto</Button></div>
           </form>
         </DialogContent>
       </Dialog>
