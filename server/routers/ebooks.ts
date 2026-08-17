@@ -115,7 +115,11 @@ export const ebookRouter = router({
       response_format: discoveryResponseFormat,
     });
     const raw = result.choices[0]?.message.content;
-    return discoverySchema.parse(JSON.parse(typeof raw === "string" ? raw : "{}"));
+    try {
+      return discoverySchema.parse(JSON.parse(typeof raw === "string" ? raw : "{}"));
+    } catch {
+      throw new TRPCError({ code: "BAD_GATEWAY", message: "A IA devolveu uma sugestão em formato inesperado. Tente analisar o briefing novamente." });
+    }
   }),
 
   update: protectedProcedure.input(z.object({
@@ -152,7 +156,12 @@ export const ebookRouter = router({
         response_format: outlineResponseFormat,
       });
       const raw = result.choices[0]?.message.content;
-      const outline = outlineSchema.parse(JSON.parse(typeof raw === "string" ? raw : "{}"));
+      let outline: z.infer<typeof outlineSchema>;
+      try {
+        outline = outlineSchema.parse(JSON.parse(typeof raw === "string" ? raw : "{}"));
+      } catch {
+        throw new TRPCError({ code: "BAD_GATEWAY", message: "A IA gerou uma estrutura extensa demais para validar agora. Tente gerar a estrutura novamente." });
+      }
       await updateEbook(input.ebookId, ctx.user.id, {
         title: outline.title,
         subtitle: outline.subtitle,
@@ -215,7 +224,7 @@ export const ebookRouter = router({
     ebookId: z.number().int().positive(),
     chapterId: z.number().int().positive(),
     title: z.string().min(2).max(255).optional(),
-    summary: z.string().max(1000).nullable().optional(),
+    summary: z.string().max(6000).nullable().optional(),
     content: z.string().max(100000).nullable().optional(),
   })).mutation(async ({ ctx, input }) => {
     const { ebookId, chapterId, ...changes } = input;

@@ -30,6 +30,23 @@ describe("regras editoriais", () => {
     expect(invalid.success).toBe(false);
   });
 
+  it("aceita resumos editoriais extensos nos capítulos sugeridos", () => {
+    const result = outlineSchema.safeParse({
+      title: "Livro de teste",
+      subtitle: "Subtítulo de teste",
+      positioning: "Uma proposta editorial suficientemente longa para validar o posicionamento do projeto.",
+      genre: "Ideias cristãs",
+      tone: "Acolhedor",
+      targetAudience: "Leitores interessados em fé e prática cotidiana.",
+      chapters: [
+        { title: "Capítulo 1", summary: "Resumo detalhado. ".repeat(180) },
+        { title: "Capítulo 2", summary: "Resumo detalhado. ".repeat(180) },
+        { title: "Capítulo 3", summary: "Resumo detalhado. ".repeat(180) },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
   it("preserva as preferências editoriais nos prompts de criação", () => {
     const outline = buildOutlinePrompt(brief);
     const chapter = buildChapterPrompt(brief, { position: 2, title: "Fazer espaço", summary: "Criar uma rotina gentil." });

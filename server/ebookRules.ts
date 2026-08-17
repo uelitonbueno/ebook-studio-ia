@@ -18,7 +18,7 @@ export const outlineSchema = z.object({
   genre: z.string().max(120),
   tone: z.string().max(120),
   targetAudience: z.string().max(255),
-  chapters: z.array(z.object({ title: z.string().min(2).max(255), summary: z.string().min(20).max(1000) })).min(3).max(10),
+  chapters: z.array(z.object({ title: z.string().min(2).max(255), summary: z.string().min(20).max(6000) })).min(3).max(10),
 });
 
 export const discoverySchema = z.object({
@@ -85,7 +85,7 @@ export function buildOutlinePrompt(brief: EditorialBrief) {
 Preferências: gênero ${brief.genre ?? "a definir"}; tom ${brief.tone ?? "claro e envolvente"}; público ${brief.targetAudience ?? "leitores gerais"}.
 Objetivo: ${brief.objective ?? "Criar um e-book útil e publicável."}
 Referências e regras do autor: ${brief.referenceNotes ?? "Nenhuma informação adicional."}
-Crie de 5 a 7 capítulos progressivos. Cada resumo deve orientar um capítulo substancial. O título deve ser específico e publicável. Explique o posicionamento editorial em 2 ou 3 frases: promessa ao leitor, recorte único e diferenciação da obra.`;
+Crie de 5 a 7 capítulos progressivos. Cada resumo deve orientar um capítulo substancial, em no máximo três parágrafos curtos. O título deve ser específico e publicável. Explique o posicionamento editorial em 2 ou 3 frases: promessa ao leitor, recorte único e diferenciação da obra.`;
 }
 
 export function buildChapterPrompt(brief: EditorialBrief, chapter: { position: number; title: string; summary: string | null }) {

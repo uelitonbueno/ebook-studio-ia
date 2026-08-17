@@ -23,3 +23,6 @@
 - [x] Exibir a análise e permitir que o autor aplique as sugestões ao formulário antes de criar o e-book.
 - [x] Extrair e exibir intenções do projeto e temas centrais na análise de descoberta por IA.
 - [x] Usar armazenamento de texto estendido para preservar briefings e referências muito longos com segurança.
+- [x] Ajustar os limites dos resumos sugeridos pela IA para impedir falhas de validação na descoberta.
+- [x] Converter falhas de análise em mensagens amigáveis, sem exibir JSON técnico ao autor.
+- [x] Adicionar botão de exclusão de projetos na biblioteca com confirmação explícita antes da remoção.

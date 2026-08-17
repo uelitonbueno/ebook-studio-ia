@@ -1,6 +1,7 @@
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -55,12 +56,14 @@ function Studio() {
   const [titleDraft, setTitleDraft] = useState("");
   const [rewriteOpen, setRewriteOpen] = useState(false);
   const [rewriteInstruction, setRewriteInstruction] = useState("");
+  const [projectPendingDeletion, setProjectPendingDeletion] = useState<number | null>(null);
 
   const libraryQuery = trpc.ebook.list.useQuery();
   const bookQuery = trpc.ebook.get.useQuery({ ebookId: selectedId ?? 0 }, { enabled: selectedId !== null });
   const projects = libraryQuery.data ?? [];
   const book = bookQuery.data;
   const activeChapter = useMemo(() => book?.chapters.find(chapter => chapter.id === activeChapterId) ?? book?.chapters[0] ?? null, [book?.chapters, activeChapterId]);
+  const projectToDelete = useMemo(() => projects.find(project => project.id === projectPendingDeletion) ?? null, [projects, projectPendingDeletion]);
 
   useEffect(() => {
     if (!selectedId && projects[0]) setSelectedId(projects[0].id);
@@ -95,11 +98,14 @@ function Studio() {
   const artworkMutation = trpc.ebook.generateArtwork.useMutation({ onSuccess: refreshBook, onError: error => toast.error(error.message) });
   const exportMutation = trpc.ebook.export.useMutation({ onSuccess: refreshBook, onError: error => toast.error(error.message) });
   const deleteMutation = trpc.ebook.remove.useMutation({
-    onSuccess: async () => {
-      const remaining = projects.filter(project => project.id !== selectedId);
-      setSelectedId(remaining[0]?.id ?? null);
+    onSuccess: async (_, variables) => {
+      const remaining = projects.filter(project => project.id !== variables.ebookId);
+      if (selectedId === variables.ebookId) setSelectedId(remaining[0]?.id ?? null);
+      setProjectPendingDeletion(null);
+      toast.success("Projeto excluído da sua biblioteca.");
       await utils.ebook.list.invalidate();
     },
+    onError: error => toast.error(error.message),
   });
 
   const submitCreate = (event: FormEvent) => {
@@ -176,12 +182,15 @@ function Studio() {
         <div className="project-cards">
           {libraryQuery.isLoading ? <div className="project-skeleton" /> : null}
           {projects.map((project, index) => (
-            <button key={project.id} onClick={() => { setSelectedId(project.id); setActiveChapterId(null); }} className={cn("project-card", selectedId === project.id && "project-card-active")}>
-              <span className={cn("project-card-orb", index % 3 === 1 && "orb-pink", index % 3 === 2 && "orb-mint")} />
-              <span className="project-card-meta">{project.genre ?? "E-book"}</span>
-              <strong>{project.title}</strong>
-              <span className="project-card-date">Atualizado {dateLabel(project.updatedAt)}</span>
-            </button>
+            <div key={project.id} className="project-card-item">
+              <button type="button" onClick={() => { setSelectedId(project.id); setActiveChapterId(null); }} className={cn("project-card", selectedId === project.id && "project-card-active")}>
+                <span className={cn("project-card-orb", index % 3 === 1 && "orb-pink", index % 3 === 2 && "orb-mint")} />
+                <span className="project-card-meta">{project.genre ?? "E-book"}</span>
+                <strong>{project.title}</strong>
+                <span className="project-card-date">Atualizado {dateLabel(project.updatedAt)}</span>
+              </button>
+              <button type="button" onClick={() => setProjectPendingDeletion(project.id)} className="project-card-delete" aria-label={`Excluir ${project.title}`}><Trash2 className="h-3.5 w-3.5" /></button>
+            </div>
           ))}
           <button onClick={() => setCreateOpen(true)} className="project-add-card"><Plus className="h-4 w-4" /><span>Criar novo</span></button>
         </div>
@@ -252,7 +261,7 @@ function Studio() {
               </div>
               {book.exports.length ? <div className="export-history">{book.exports.slice(0, 3).map(file => <a key={file.id} href={file.downloadUrl} className="export-link"><span>{formatLabel[file.format]}</span><span>{dateLabel(file.createdAt)}</span></a>)}</div> : null}
             </div>
-            <button onClick={() => deleteMutation.mutate({ ebookId: book.ebook.id })} className="delete-project"><Trash2 className="h-3.5 w-3.5" />Excluir projeto</button>
+            <button onClick={() => setProjectPendingDeletion(book.ebook.id)} className="delete-project"><Trash2 className="h-3.5 w-3.5" />Excluir projeto</button>
           </aside>
         </section>
       )}
@@ -286,6 +295,13 @@ function Studio() {
           <div className="mt-4 space-y-3"><Textarea value={rewriteInstruction} onChange={event => setRewriteInstruction(event.target.value)} placeholder="Ex.: deixe o texto mais direto, inclua um exemplo prático e reduza o tom técnico." className="min-h-28 resize-none rounded-xl bg-[#f8f9f9] p-4 text-sm" /><div className="flex justify-end"><Button onClick={() => { if (selectedId && activeChapter && rewriteInstruction.trim()) rewriteMutation.mutate({ ebookId: selectedId, chapterId: activeChapter.id, instruction: rewriteInstruction.trim() }); }} disabled={rewriteMutation.isPending || rewriteInstruction.trim().length < 8} className="new-book-button">{rewriteMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <WandSparkles className="h-4 w-4" />}Reescrever capítulo</Button></div></div>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={projectPendingDeletion !== null} onOpenChange={open => { if (!open && !deleteMutation.isPending) setProjectPendingDeletion(null); }}>
+        <AlertDialogContent className="max-w-md rounded-2xl">
+          <AlertDialogHeader><p className="eyebrow">EXCLUIR PROJETO</p><AlertDialogTitle>Excluir “{projectToDelete?.title ?? "este projeto"}”?</AlertDialogTitle><AlertDialogDescription>Essa ação remove o projeto, capítulos, ilustrações e registros de exportação da sua biblioteca. Ela não pode ser desfeita.</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogFooter><AlertDialogCancel disabled={deleteMutation.isPending}>Cancelar</AlertDialogCancel><AlertDialogAction disabled={deleteMutation.isPending || !projectToDelete} onClick={() => { if (projectToDelete) deleteMutation.mutate({ ebookId: projectToDelete.id }); }} className="bg-destructive text-white hover:bg-destructive/90">{deleteMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}Excluir definitivamente</AlertDialogAction></AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {isGenerating ? <div className="generation-toast"><Loader2 className="h-4 w-4 animate-spin" /><span>A IA está trabalhando no seu livro...</span></div> : null}
     </div>
