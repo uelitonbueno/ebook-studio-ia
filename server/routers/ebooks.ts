@@ -241,12 +241,12 @@ export const ebookRouter = router({
     return page;
   }),
 
-  generatePageImage: protectedProcedure.input(z.object({ ebookId: z.number().int().positive(), pageId: z.number().int().positive(), direction: z.string().max(6000).optional() })).mutation(async ({ ctx, input }) => {
+  generatePageImage: protectedProcedure.input(z.object({ ebookId: z.number().int().positive(), pageId: z.number().int().positive(), direction: z.string().max(6000).optional(), variation: z.string().max(200).optional() })).mutation(async ({ ctx, input }) => {
     const project = await getOwnedEbook(input.ebookId, ctx.user.id);
     const page = project.pages.find(item => item.id === input.pageId);
     if (!page) throw new TRPCError({ code: "NOT_FOUND", message: "Página não encontrada." });
     await updateBookPage(page.id, input.ebookId, ctx.user.id, { status: "generating" });
-    const prompt = `${buildPageImagePrompt(project.ebook, page)} Direção adicional do autor: ${input.direction ?? "seguir o conteúdo e a proposta visual da página"}.`;
+    const prompt = `${buildPageImagePrompt(project.ebook, page)} Direção adicional do autor: ${input.direction ?? "seguir o conteúdo e a proposta visual da página"}.${input.variation ? ` Crie uma nova composição visual, distinta das tentativas anteriores. Variação: ${input.variation}.` : ""}`;
     try {
       const generated = await generateImage({ prompt, quality: "high" });
       if (!generated.url) throw new Error("Imagem ausente");

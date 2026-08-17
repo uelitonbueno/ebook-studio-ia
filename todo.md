@@ -38,3 +38,8 @@
 - [x] Ajustar os controles de exportação para manter PDF, EPUB e DOCX totalmente acessíveis em telas móveis.
 - [x] Retomar automaticamente a geração de imagens pendentes após atualização da página ou falha pontual.
 - [x] Exibir ação para continuar imagens pendentes e mensagens claras quando uma página não puder ser gerada.
+- [x] Recuperar o feedback visual e a atualização imediata da regeneração de figuras após a restauração do projeto.
+- [x] Habilitar a sessão de navegador do usuário para validar os controles autenticados do estúdio.
+- [x] Revalidar geração, nova tentativa, exportação e confirmação de exclusão no ambiente autenticado.
+- [ ] Testar o botão de marcar revisada e confirmar o feedback visual da página no ambiente autenticado.
+- [x] Registrar a confirmação e o cancelamento da exclusão sem remover o projeto do usuário.

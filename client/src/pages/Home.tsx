@@ -16,6 +16,7 @@ import { RichTextEditor } from "../components/RichTextEditor";
 
 type BookType = "historybook" | "coloring";
 type PageDraft = { id: number; title: string; content: string; imagePrompt: string; status: "draft" | "generating" | "ready" | "reviewed" };
+type WorkbenchTab = "overview" | "pages" | "illustrations" | "review";
 
 const bookTypeCopy: Record<BookType, { label: string; eyebrow: string; description: string; action: string }> = {
   coloring: { label: "Livro para Colorir", eyebrow: "CRIAÇÃO VISUAL", description: "Um tema, cenas para pintar e apenas o nome de cada página. Sem narrativa.", action: "Criar páginas para colorir" },
@@ -41,6 +42,8 @@ function Studio() {
   const [pageDraft, setPageDraft] = useState<PageDraft | null>(null);
   const [autoGenerationEnabled, setAutoGenerationEnabled] = useState(true);
   const [failedImagePageIds, setFailedImagePageIds] = useState<number[]>([]);
+  const [pageImageError, setPageImageError] = useState<{ pageId: number; message: string } | null>(null);
+  const [activeWorkbenchTab, setActiveWorkbenchTab] = useState<WorkbenchTab>("overview");
 
   const libraryQuery = trpc.ebook.list.useQuery();
   const projects = libraryQuery.data ?? [];
@@ -62,52 +65,66 @@ function Studio() {
   };
 
   const pageImageMutation = trpc.ebook.generatePageImage.useMutation({
-    onSuccess: async (_, variables) => {
+    onMutate: () => {
+      setPageImageError(null);
+      toast.loading("Gerando uma nova versão da figura...", { id: "page-image-generation" });
+    },
+    onSuccess: async (updatedPage, variables) => {
       setFailedImagePageIds(ids => ids.filter(id => id !== variables.pageId));
+      setPageImageError(current => current?.pageId === variables.pageId ? null : current);
+      if (updatedPage) {
+        utils.ebook.get.setData({ ebookId: variables.ebookId }, existing => existing ? { ...existing, pages: existing.pages.map(page => page.id === updatedPage.id ? { ...page, ...updatedPage } : page) } : existing);
+      }
+      toast.success("A nova versão da figura está pronta.", { id: "page-image-generation" });
       await refreshBook();
     },
     onError: async (error, variables) => {
       setFailedImagePageIds(ids => ids.includes(variables.pageId) ? ids : [...ids, variables.pageId]);
-      toast.error(`${error.message} A fila continuará nas demais páginas.`);
+      setPageImageError({ pageId: variables.pageId, message: error.message });
+      toast.error(`${error.message} A fila continuará nas demais páginas.`, { id: "page-image-generation" });
       await refreshBook();
     },
   });
 
   const generateBookMutation = trpc.ebook.generateBookPages.useMutation({
+    onMutate: () => toast.loading("Criando as páginas do livro...", { id: "book-pages-generation" }),
     onSuccess: async project => {
       setSelectedId(project.ebook.id);
       setSelectedPageId(project.pages[0]?.id ?? null);
       setAutoGenerationEnabled(true);
       setFailedImagePageIds([]);
-      toast.success("As páginas foram criadas. Agora estamos ilustrando cada uma delas.");
+      toast.success("As páginas foram criadas. Agora estamos ilustrando cada uma delas.", { id: "book-pages-generation" });
       await utils.ebook.list.invalidate();
       await utils.ebook.get.invalidate({ ebookId: project.ebook.id });
     },
-    onError: error => toast.error(error.message),
+    onError: error => toast.error(error.message, { id: "book-pages-generation" }),
   });
 
   const createMutation = trpc.ebook.create.useMutation({
+    onMutate: () => toast.loading("Criando o projeto do livro...", { id: "book-creation" }),
     onSuccess: created => {
       setSelectedId(created.id);
       setCreateOpen(false);
       generateBookMutation.mutate({ ebookId: created.id });
       setIdea("");
       void utils.ebook.list.invalidate();
+      toast.success("Projeto criado. A estrutura está sendo preparada.", { id: "book-creation" });
     },
-    onError: error => toast.error(error.message),
+    onError: error => toast.error(error.message, { id: "book-creation" }),
   });
 
-  const updatePageMutation = trpc.ebook.updateBookPage.useMutation({ onSuccess: refreshBook, onError: error => toast.error(error.message) });
-  const exportMutation = trpc.ebook.export.useMutation({ onSuccess: async () => { toast.success("Arquivo de exportação preparado."); await refreshBook(); }, onError: error => toast.error(error.message) });
+  const updatePageMutation = trpc.ebook.updateBookPage.useMutation({ onMutate: () => toast.loading("Salvando a revisão da página...", { id: "page-save" }), onSuccess: async () => { toast.success("Página marcada como revisada.", { id: "page-save" }); await refreshBook(); }, onError: error => toast.error(error.message, { id: "page-save" }) });
+  const exportMutation = trpc.ebook.export.useMutation({ onMutate: variables => toast.loading(`Preparando ${variables.format.toUpperCase()}...`, { id: "ebook-export" }), onSuccess: async () => { toast.success("Arquivo de exportação preparado.", { id: "ebook-export" }); await refreshBook(); }, onError: error => toast.error(error.message, { id: "ebook-export" }) });
   const deleteMutation = trpc.ebook.remove.useMutation({
+    onMutate: () => toast.loading("Excluindo o projeto...", { id: "book-delete" }),
     onSuccess: async (_, input) => {
       const remaining = projects.filter(project => project.id !== input.ebookId);
       if (selectedId === input.ebookId) setSelectedId(remaining[0]?.id ?? null);
       setPendingDeleteId(null);
-      toast.success("Projeto excluído da biblioteca.");
+      toast.success("Projeto excluído da biblioteca.", { id: "book-delete" });
       await utils.ebook.list.invalidate();
     },
-    onError: error => toast.error(error.message),
+    onError: error => toast.error(error.message, { id: "book-delete" }),
   });
 
   const pendingImagePage = useMemo(() => {
@@ -151,6 +168,17 @@ function Studio() {
     updatePageMutation.mutate({ ebookId: selectedId, pageId: pageDraft.id, title: pageDraft.title, content: pageDraft.content, imagePrompt: pageDraft.imagePrompt, status: "reviewed" });
   };
 
+  const regenerateActivePageImage = () => {
+    if (!selectedId || !pageDraft) return;
+    pageImageMutation.mutate({ ebookId: selectedId, pageId: pageDraft.id, direction: pageDraft.imagePrompt, variation: `versão-${Date.now()}` });
+  };
+
+  const switchWorkbenchTab = (tab: WorkbenchTab) => {
+    setActiveWorkbenchTab(tab);
+    const target = tab === "overview" ? document.querySelector(".progress-layout") : document.querySelector(".pages-workspace");
+    target?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   const illustratedPages = book?.pages.filter(page => Boolean(page.imageUrl)).length ?? 0;
   const remainingImages = book?.pages.filter(page => !page.imageUrl).length ?? 0;
   const reviewedPages = book?.pages.filter(page => page.status === "reviewed").length ?? 0;
@@ -184,8 +212,9 @@ function Studio() {
       ) : (
         <section className="book-workbench">
           <div className="book-heading"><div><p className="studio-kicker">LIVROS / {currentType === "coloring" ? "COLORIR" : "HISTORYBOOK"}</p><h2>{book.ebook.title}</h2><span>{book.ebook.targetAudience ?? "Público a definir"} · {book.ebook.pageCount} páginas</span></div><div className="book-heading-actions"><div className="export-actions"><Button variant="outline" onClick={() => exportMutation.mutate({ ebookId: book.ebook.id, format: "pdf" })} disabled={exportMutation.isPending || !book.pages.length}><Download className="h-4 w-4" />PDF</Button><Button variant="outline" onClick={() => exportMutation.mutate({ ebookId: book.ebook.id, format: "epub" })} disabled={exportMutation.isPending || !book.pages.length}>EPUB</Button><Button variant="outline" onClick={() => exportMutation.mutate({ ebookId: book.ebook.id, format: "docx" })} disabled={exportMutation.isPending || !book.pages.length}>DOCX</Button></div><Button variant="outline" onClick={() => setPendingDeleteId(book.ebook.id)}><Trash2 className="h-4 w-4" />Excluir</Button><Button className="forest-button" onClick={() => generateBookMutation.mutate({ ebookId: book.ebook.id })} disabled={generateBookMutation.isPending}><WandSparkles className="h-4 w-4" />Refazer livro</Button></div></div>
-          <nav className="book-tabs"><span className="active">Visão geral</span><span>Páginas</span><span>Ilustrações</span><span>Revisão final</span></nav>
+          <nav className="book-tabs" aria-label="Seções do livro"><button type="button" className={cn(activeWorkbenchTab === "overview" && "active")} onClick={() => switchWorkbenchTab("overview")}>Visão geral</button><button type="button" className={cn(activeWorkbenchTab === "pages" && "active")} onClick={() => switchWorkbenchTab("pages")}>Páginas</button><button type="button" className={cn(activeWorkbenchTab === "illustrations" && "active")} onClick={() => switchWorkbenchTab("illustrations")}>Ilustrações</button><button type="button" className={cn(activeWorkbenchTab === "review" && "active")} onClick={() => switchWorkbenchTab("review")}>Revisão final</button></nav>
           {book.exports.length ? <div className="recent-exports"><span>ARQUIVOS PRONTOS</span>{book.exports.slice(0, 3).map(file => <a key={file.id} href={file.downloadUrl}><Download className="h-3.5 w-3.5" />Baixar {file.format.toUpperCase()}</a>)}</div> : null}
+          {pageImageError && activePage?.id === pageImageError.pageId ? <div className="page-image-error" role="alert"><div><strong>Não foi possível atualizar esta figura.</strong><span>{pageImageError.message}</span></div><Button variant="outline" onClick={regenerateActivePageImage} disabled={pageImageMutation.isPending}><RotateCcw className="h-3.5 w-3.5" />Tentar novamente</Button></div> : null}
           <div className="progress-layout"><section className="journey-card"><div className="journey-card-title"><div><p className="studio-kicker">JORNADA DO LIVRO</p><h3>Progresso editorial</h3></div><strong>{progress}%</strong></div><div className="progress-track"><span style={{ width: `${progress}%` }} /></div><div className="journey-rows"><div><CheckCircle2 className="text-[#3d7860]" /><span><strong>Ideia e estrutura</strong><small>{book.pages.length ? "Etapa preparada" : "Aguardando geração"}</small></span><ChevronRight /></div><div><CheckCircle2 className={illustratedPages === book.pages.length && book.pages.length ? "text-[#3d7860]" : "text-[#c7cfca]"} /><span><strong>Imagens por página</strong><small>{illustratedPages} de {book.pages.length} ilustrações prontas {remainingImages ? `· ${remainingImages} pendentes` : ""}</small>{remainingImages ? <Button variant="outline" className="resume-images-button" onClick={continuePendingImages} disabled={pageImageMutation.isPending}><RotateCcw className="h-3.5 w-3.5" />{pageImageMutation.isPending ? "Gerando..." : failedImagePageIds.length ? `Tentar ${failedImagePageIds.length} pendente${failedImagePageIds.length > 1 ? "s" : ""}` : "Continuar imagens"}</Button> : null}</span><ChevronRight /></div><div><CheckCircle2 className={reviewedPages === book.pages.length && book.pages.length ? "text-[#3d7860]" : "text-[#c7cfca]"} /><span><strong>Revisão final</strong><small>{reviewedPages} páginas revisadas manualmente</small></span><ChevronRight /></div></div></section><aside className="content-summary"><p className="studio-kicker">CONTEÚDO</p><h3>Resumo</h3><div><span><strong>{book.pages.length}</strong><small>páginas</small></span><span><strong>{currentType === "coloring" ? illustratedPages : book.pages.filter(page => Boolean(page.content)).length}</strong><small>{currentType === "coloring" ? "desenhos prontos" : "textos gerados"}</small></span><span><strong>{illustratedPages}</strong><small>imagens geradas</small></span><span><strong>{reviewedPages}</strong><small>páginas revisadas</small></span></div></aside></div>
           {!book.pages.length ? <div className="generation-empty"><FileImage className="h-8 w-8" /><h3>Seu livro está pronto para nascer.</h3><p>A IA criará todas as páginas e iniciará as ilustrações automaticamente.</p><Button className="forest-button" onClick={() => generateBookMutation.mutate({ ebookId: book.ebook.id })}><Sparkles className="h-4 w-4" />{bookTypeCopy[currentType].action}</Button></div> : <div className="pages-workspace"><aside className="page-rail"><div className="page-rail-head"><span>PÁGINAS</span><strong>{book.pages.length}</strong></div>{book.pages.map(page => <button key={page.id} onClick={() => setSelectedPageId(page.id)} className={cn("page-thumb", activePage?.id === page.id && "selected")}><span>{String(page.position).padStart(2, "0")}</span>{page.imageUrl ? <img src={page.imageUrl} alt={`Página ${page.position}`} /> : <div className="page-thumb-empty">{page.status === "generating" ? <Loader2 className="animate-spin" /> : <ImagePlus />}</div>}<small>{page.title}</small></button>)}</aside><article className="page-review-panel">{activePage && pageDraft ? <><div className="page-review-top"><div><p className="studio-kicker">PÁGINA {String(activePage.position).padStart(2, "0")}</p><Input value={pageDraft.title} onChange={event => setPageDraft({ ...pageDraft, title: event.target.value })} className="page-title-input" /></div><Button variant="outline" onClick={savePage} disabled={updatePageMutation.isPending}><Check className="h-4 w-4" />Marcar revisada</Button></div><div className="page-canvas">{activePage.imageUrl ? <img src={activePage.imageUrl} alt={activePage.title} /> : <div className="image-waiting">{activePage.status === "generating" ? <Loader2 className="h-7 w-7 animate-spin" /> : <ImagePlus className="h-7 w-7" />}<strong>{activePage.status === "generating" ? "Criando ilustração..." : "Ilustração aguardando geração"}</strong><span>A imagem será criada automaticamente ou você pode iniciar agora.</span></div>}</div><div className="image-controls"><Textarea value={pageDraft.imagePrompt} onChange={event => setPageDraft({ ...pageDraft, imagePrompt: event.target.value })} className="image-prompt-input" placeholder="Direção da imagem" /><Button className="forest-button" disabled={pageImageMutation.isPending} onClick={() => { savePage(); pageImageMutation.mutate({ ebookId: book.ebook.id, pageId: pageDraft.id, direction: pageDraft.imagePrompt }); }}><RotateCcw className="h-4 w-4" />{activePage.imageUrl ? "Regenerar figura" : "Gerar figura"}</Button></div>{currentType === "historybook" ? <div className="story-text-editor"><p className="studio-kicker">TEXTO DA PÁGINA</p><RichTextEditor content={pageDraft.content} onChange={content => setPageDraft({ ...pageDraft, content })} placeholder="Escreva ou ajuste o texto desta página..." /></div> : <div className="coloring-note"><Palette className="h-5 w-5" /><div><strong>Página para colorir</strong><p>Esta página exibirá somente o título curto e o desenho preto e branco. Não há narrativa.</p></div></div>}</> : null}</article></div>}
         </section>
