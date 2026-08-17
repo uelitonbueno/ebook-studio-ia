@@ -21,6 +21,10 @@ const redirectToLoginIfUnauthorized = (error: unknown) => {
   startLogin();
 };
 
+const isExpectedBusinessError = (error: unknown) => {
+  return error instanceof TRPCClientError && error.data?.code === "PRECONDITION_FAILED";
+};
+
 queryClient.getQueryCache().subscribe(event => {
   if (event.type === "updated" && event.action.type === "error") {
     const error = event.query.state.error;
@@ -33,7 +37,7 @@ queryClient.getMutationCache().subscribe(event => {
   if (event.type === "updated" && event.action.type === "error") {
     const error = event.mutation.state.error;
     redirectToLoginIfUnauthorized(error);
-    console.error("[API Mutation Error]", error);
+    if (!isExpectedBusinessError(error)) console.error("[API Mutation Error]", error);
   }
 });
 

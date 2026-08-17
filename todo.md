@@ -50,3 +50,4 @@
 - [x] Cobrir em teste automatizado o bloqueio persistente causado por usage exhausted ou failed_precondition.
 - [x] Testar o procedimento de geração ao persistir e respeitar o bloqueio causado por indisponibilidade do provedor de imagens.
 - [x] Registrar a confirmação e o cancelamento da exclusão sem remover o projeto do usuário.
+- [x] Filtrar PRECONDITION_FAILED esperado do logger global e substituir o toast técnico de indisponibilidade por feedback informativo.

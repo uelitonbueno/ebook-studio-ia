@@ -96,10 +96,15 @@ function Studio() {
       await refreshBook();
     },
     onError: async (error, variables) => {
-      const unavailable = error.message.includes("indisponível");
+      const errorCode = (error as { data?: { code?: string } }).data?.code;
+      const unavailable = errorCode === "PRECONDITION_FAILED" || error.message.includes("indisponível");
       if (unavailable) {
         setOptimisticImageRetryAt(Date.now() + 15 * 60 * 1000);
         setAutoGenerationEnabled(false);
+        setPageImageError({ pageId: variables.pageId, message: "A geração de imagens está indisponível para esta conta no momento. Tente novamente mais tarde." });
+        toast.info("A geração de imagens está temporariamente indisponível.", { id: "page-image-generation" });
+        await refreshBook();
+        return;
       }
       setFailedImagePageIds(ids => ids.includes(variables.pageId) ? ids : [...ids, variables.pageId]);
       setPageImageError({ pageId: variables.pageId, message: error.message });
