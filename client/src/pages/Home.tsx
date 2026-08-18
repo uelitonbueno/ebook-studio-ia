@@ -10,7 +10,7 @@ import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { BookHeart, Check, CheckCircle2, ChevronRight, Download, FileImage, ImagePlus, Loader2, Palette, PenLine, Plus, RotateCcw, Sparkles, Trash2, WandSparkles } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import DashboardLayout from "../components/DashboardLayout";
 import { RichTextEditor } from "../components/RichTextEditor";
 
@@ -46,9 +46,14 @@ function Studio() {
   const [optimisticImageRetryAt, setOptimisticImageRetryAt] = useState<number | null>(null);
   const [clock, setClock] = useState(() => Date.now());
   const [activeWorkbenchTab, setActiveWorkbenchTab] = useState<WorkbenchTab>("overview");
+  const [imageLibraryOpen, setImageLibraryOpen] = useState(false);
+  const [libraryImporting, setLibraryImporting] = useState(false);
+  const libraryFileInputRef = useRef<HTMLInputElement>(null);
 
   const libraryQuery = trpc.ebook.list.useQuery();
+  const imageLibraryQuery = trpc.ebook.listImageLibrary.useQuery();
   const projects = libraryQuery.data ?? [];
+  const libraryImages = imageLibraryQuery.data ?? [];
   const bookQuery = trpc.ebook.get.useQuery({ ebookId: selectedId ?? 0 }, { enabled: selectedId !== null });
   const book = bookQuery.data;
   const persistedImageRetryAt = book?.ebook.imageGenerationRetryAfter ? new Date(book.ebook.imageGenerationRetryAfter).getTime() : null;
@@ -141,6 +146,25 @@ function Studio() {
   });
 
   const updatePageMutation = trpc.ebook.updateBookPage.useMutation({ onMutate: () => toast.loading("Salvando a revisão da página...", { id: "page-save" }), onSuccess: async () => { toast.success("Página marcada como revisada.", { id: "page-save" }); await refreshBook(); }, onError: error => toast.error(error.message, { id: "page-save" }) });
+  const applyLibraryImageMutation = trpc.ebook.applyLibraryImage.useMutation({
+    onMutate: () => toast.loading("Aplicando imagem da biblioteca...", { id: "library-image-apply" }),
+    onSuccess: async (updatedPage, variables) => {
+      utils.ebook.get.setData({ ebookId: variables.ebookId }, existing => existing ? { ...existing, pages: existing.pages.map(page => page.id === updatedPage.id ? { ...page, ...updatedPage } : page) } : existing);
+      setImageLibraryOpen(false);
+      toast.success("Imagem aplicada à página. Revise e marque a página novamente quando estiver pronta.", { id: "library-image-apply" });
+      await refreshBook();
+    },
+    onError: error => toast.error(error.message, { id: "library-image-apply" }),
+  });
+  const uploadLibraryImageMutation = trpc.ebook.uploadLibraryImage.useMutation({
+    onMutate: () => toast.loading("Importando imagem para a biblioteca...", { id: "library-image-upload" }),
+    onSuccess: async () => {
+      toast.success("Imagem adicionada à biblioteca.", { id: "library-image-upload" });
+      await utils.ebook.listImageLibrary.invalidate();
+    },
+    onError: error => toast.error(error.message, { id: "library-image-upload" }),
+    onSettled: () => setLibraryImporting(false),
+  });
   const exportMutation = trpc.ebook.export.useMutation({ onMutate: variables => toast.loading(`Preparando ${variables.format.toUpperCase()}...`, { id: "ebook-export" }), onSuccess: async () => { toast.success("Arquivo de exportação preparado.", { id: "ebook-export" }); await refreshBook(); }, onError: error => toast.error(error.message, { id: "ebook-export" }) });
   const deleteMutation = trpc.ebook.remove.useMutation({
     onMutate: () => toast.loading("Excluindo o projeto...", { id: "book-delete" }),
@@ -192,6 +216,34 @@ function Studio() {
       visualStyle,
       objective: bookType === "coloring" ? "Criar páginas cristãs adequadas para colorir." : "Criar uma história infantil cristã completa, pronta para revisão.",
     });
+  };
+
+  const handleLibraryFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    const supported = ["image/png", "image/jpeg", "image/webp", "image/gif"].includes(file.type);
+    if (!supported) {
+      toast.error("Escolha uma imagem PNG, JPEG, WEBP ou GIF.");
+      return;
+    }
+    if (file.size > 12 * 1024 * 1024) {
+      toast.error("A imagem deve ter no máximo 12 MB.");
+      return;
+    }
+    setLibraryImporting(true);
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(new Error("Não foi possível ler o arquivo."));
+      reader.readAsDataURL(file);
+    }).catch(error => {
+      setLibraryImporting(false);
+      toast.error(error instanceof Error ? error.message : "Não foi possível ler o arquivo.");
+      return null;
+    });
+    if (!dataUrl) return;
+    uploadLibraryImageMutation.mutate({ name: file.name, mimeType: file.type as "image/png" | "image/jpeg" | "image/webp" | "image/gif", dataUrl });
   };
 
   const savePage = () => {
@@ -251,9 +303,11 @@ function Studio() {
           {book.exports.length ? <div className="recent-exports"><span>ARQUIVOS PRONTOS</span>{book.exports.slice(0, 3).map(file => <a key={file.id} href={file.downloadUrl}><Download className="h-3.5 w-3.5" />Baixar {file.format.toUpperCase()}</a>)}</div> : null}
           {pageImageError && activePage?.id === pageImageError.pageId ? <div className="page-image-error" role="alert"><div><strong>{imageGenerationUnavailable ? "A geração de imagens está indisponível." : "Não foi possível atualizar esta figura."}</strong><span>{pageImageError.message}</span></div><Button variant="outline" onClick={regenerateActivePageImage} disabled={pageImageMutation.isPending || imageGenerationUnavailable}><RotateCcw className="h-3.5 w-3.5" />{imageGenerationUnavailable ? "Indisponível agora" : "Tentar novamente"}</Button></div> : null}
           <div className="progress-layout"><section className="journey-card"><div className="journey-card-title"><div><p className="studio-kicker">JORNADA DO LIVRO</p><h3>Progresso editorial</h3></div><strong>{progress}%</strong></div><div className="progress-track"><span style={{ width: `${progress}%` }} /></div><div className="journey-rows"><div><CheckCircle2 className="text-[#3d7860]" /><span><strong>Ideia e estrutura</strong><small>{book.pages.length ? "Etapa preparada" : "Aguardando geração"}</small></span><ChevronRight /></div><div><CheckCircle2 className={illustratedPages === book.pages.length && book.pages.length ? "text-[#3d7860]" : "text-[#c7cfca]"} /><span><strong>Imagens por página</strong><small>{illustratedPages} de {book.pages.length} ilustrações prontas {remainingImages ? `· ${remainingImages} pendentes` : ""}</small>{remainingImages ? <Button variant="outline" className="resume-images-button" onClick={continuePendingImages} disabled={pageImageMutation.isPending || imageGenerationUnavailable}><RotateCcw className="h-3.5 w-3.5" />{imageGenerationUnavailable ? "Indisponível agora" : pageImageMutation.isPending ? "Gerando..." : failedImagePageIds.length ? `Tentar ${failedImagePageIds.length} pendente${failedImagePageIds.length > 1 ? "s" : ""}` : "Continuar imagens"}</Button> : null}</span><ChevronRight /></div><div><CheckCircle2 className={reviewedPages === book.pages.length && book.pages.length ? "text-[#3d7860]" : "text-[#c7cfca]"} /><span><strong>Revisão final</strong><small>{reviewedPages} páginas revisadas manualmente</small></span><ChevronRight /></div></div></section><aside className="content-summary"><p className="studio-kicker">CONTEÚDO</p><h3>Resumo</h3><div><span><strong>{book.pages.length}</strong><small>páginas</small></span><span><strong>{currentType === "coloring" ? illustratedPages : book.pages.filter(page => Boolean(page.content)).length}</strong><small>{currentType === "coloring" ? "desenhos prontos" : "textos gerados"}</small></span><span><strong>{illustratedPages}</strong><small>imagens geradas</small></span><span><strong>{reviewedPages}</strong><small>páginas revisadas</small></span></div></aside></div>
-          {!book.pages.length ? <div className="generation-empty"><FileImage className="h-8 w-8" /><h3>Seu livro está pronto para nascer.</h3><p>A IA criará todas as páginas e iniciará as ilustrações automaticamente.</p><Button className="forest-button" onClick={() => generateBookMutation.mutate({ ebookId: book.ebook.id })}><Sparkles className="h-4 w-4" />{bookTypeCopy[currentType].action}</Button></div> : <div className="pages-workspace"><aside className="page-rail"><div className="page-rail-head"><span>PÁGINAS</span><strong>{book.pages.length}</strong></div>{book.pages.map(page => <button key={page.id} onClick={() => setSelectedPageId(page.id)} className={cn("page-thumb", activePage?.id === page.id && "selected")}><span>{String(page.position).padStart(2, "0")}</span>{page.imageUrl ? <img src={page.imageUrl} alt={`Página ${page.position}`} /> : <div className="page-thumb-empty">{page.status === "generating" ? <Loader2 className="animate-spin" /> : <ImagePlus />}</div>}<small>{page.title}</small></button>)}</aside><article className="page-review-panel">{activePage && pageDraft ? <><div className="page-review-top"><div><p className="studio-kicker">PÁGINA {String(activePage.position).padStart(2, "0")}</p><Input value={pageDraft.title} onChange={event => setPageDraft({ ...pageDraft, title: event.target.value })} className="page-title-input" /></div><Button variant="outline" onClick={savePage} disabled={updatePageMutation.isPending}><Check className="h-4 w-4" />Marcar revisada</Button></div><div className="page-canvas">{activePage.imageUrl ? <img src={activePage.imageUrl} alt={activePage.title} /> : <div className="image-waiting">{activePage.status === "generating" ? <Loader2 className="h-7 w-7 animate-spin" /> : <ImagePlus className="h-7 w-7" />}<strong>{activePage.status === "generating" ? "Criando ilustração..." : "Ilustração aguardando geração"}</strong><span>A imagem será criada automaticamente ou você pode iniciar agora.</span></div>}</div><div className="image-controls"><Textarea value={pageDraft.imagePrompt} onChange={event => setPageDraft({ ...pageDraft, imagePrompt: event.target.value })} className="image-prompt-input" placeholder="Direção da imagem" /><Button className="forest-button" disabled={pageImageMutation.isPending || imageGenerationUnavailable} onClick={regenerateActivePageImage}><RotateCcw className="h-4 w-4" />{imageGenerationUnavailable ? "Geração indisponível" : activePage.imageUrl ? "Regenerar figura" : "Gerar figura"}</Button></div>{currentType === "historybook" ? <div className="story-text-editor"><p className="studio-kicker">TEXTO DA PÁGINA</p><RichTextEditor content={pageDraft.content} onChange={content => setPageDraft({ ...pageDraft, content })} placeholder="Escreva ou ajuste o texto desta página..." /></div> : <div className="coloring-note"><Palette className="h-5 w-5" /><div><strong>Página para colorir</strong><p>Esta página exibirá somente o título curto e o desenho preto e branco. Não há narrativa.</p></div></div>}</> : null}</article></div>}
+          {!book.pages.length ? <div className="generation-empty"><FileImage className="h-8 w-8" /><h3>Seu livro está pronto para nascer.</h3><p>A IA criará todas as páginas e iniciará as ilustrações automaticamente.</p><Button className="forest-button" onClick={() => generateBookMutation.mutate({ ebookId: book.ebook.id })}><Sparkles className="h-4 w-4" />{bookTypeCopy[currentType].action}</Button></div> : <div className="pages-workspace"><aside className="page-rail"><div className="page-rail-head"><span>PÁGINAS</span><strong>{book.pages.length}</strong></div>{book.pages.map(page => <button key={page.id} onClick={() => setSelectedPageId(page.id)} className={cn("page-thumb", activePage?.id === page.id && "selected")}><span>{String(page.position).padStart(2, "0")}</span>{page.imageUrl ? <img src={page.imageUrl} alt={`Página ${page.position}`} /> : <div className="page-thumb-empty">{page.status === "generating" ? <Loader2 className="animate-spin" /> : <ImagePlus />}</div>}<small>{page.title}</small></button>)}</aside><article className="page-review-panel">{activePage && pageDraft ? <><div className="page-review-top"><div><p className="studio-kicker">PÁGINA {String(activePage.position).padStart(2, "0")}</p><Input value={pageDraft.title} onChange={event => setPageDraft({ ...pageDraft, title: event.target.value })} className="page-title-input" /></div><Button variant="outline" onClick={savePage} disabled={updatePageMutation.isPending}><Check className="h-4 w-4" />Marcar revisada</Button></div><div className="page-canvas">{activePage.imageUrl ? <img src={activePage.imageUrl} alt={activePage.title} /> : <div className="image-waiting">{activePage.status === "generating" ? <Loader2 className="h-7 w-7 animate-spin" /> : <ImagePlus className="h-7 w-7" />}<strong>{activePage.status === "generating" ? "Criando ilustração..." : "Ilustração aguardando geração"}</strong><span>A imagem será criada automaticamente ou você pode iniciar agora.</span></div>}</div><div className="image-controls"><Textarea value={pageDraft.imagePrompt} onChange={event => setPageDraft({ ...pageDraft, imagePrompt: event.target.value })} className="image-prompt-input" placeholder="Direção da imagem" /><div className="flex flex-wrap items-center gap-2"><Button variant="outline" onClick={() => setImageLibraryOpen(true)}><ImagePlus className="h-4 w-4" />Biblioteca</Button><input ref={libraryFileInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" onChange={handleLibraryFile} /><Button variant="outline" onClick={() => libraryFileInputRef.current?.click()} disabled={libraryImporting}><Plus className="h-4 w-4" />{libraryImporting ? "Importando..." : "Importar imagem"}</Button><Button className="forest-button" disabled={pageImageMutation.isPending || imageGenerationUnavailable} onClick={regenerateActivePageImage}><RotateCcw className="h-4 w-4" />{imageGenerationUnavailable ? "Geração indisponível" : activePage.imageUrl ? "Regenerar figura" : "Gerar figura"}</Button></div></div>{currentType === "historybook" ? <div className="story-text-editor"><p className="studio-kicker">TEXTO DA PÁGINA</p><RichTextEditor content={pageDraft.content} onChange={content => setPageDraft({ ...pageDraft, content })} placeholder="Escreva ou ajuste o texto desta página..." /></div> : <div className="coloring-note"><Palette className="h-5 w-5" /><div><strong>Página para colorir</strong><p>Esta página exibirá somente o título curto e o desenho preto e branco. Não há narrativa.</p></div></div>}</> : null}</article></div>}
         </section>
       )}
+
+      <Dialog open={imageLibraryOpen} onOpenChange={setImageLibraryOpen}><DialogContent className="max-h-[calc(100dvh-28px)] overflow-y-auto sm:max-w-[760px]"><DialogHeader><p className="studio-kicker">BIBLIOTECA DE IMAGENS</p><DialogTitle>Escolha uma imagem para esta página</DialogTitle><DialogDescription>Selecione uma imagem já importada ou use o botão abaixo para adicionar um novo arquivo ao seu acervo.</DialogDescription></DialogHeader><div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-[#b9c9bf] bg-[#f7faf6] p-4"><div><strong className="text-sm text-[#244c3d]">Seu acervo visual</strong><p className="text-xs text-[#64756b]">PNG, JPEG, WEBP ou GIF de até 12 MB.</p><input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={handleLibraryFile} className="mt-2 block w-full cursor-pointer text-xs text-[#486357]" /></div><Button variant="outline" onClick={() => libraryFileInputRef.current?.click()} disabled={libraryImporting}><Plus className="h-4 w-4" />{libraryImporting ? "Importando..." : "Importar do computador"}</Button></div>{libraryImages.length ? <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">{libraryImages.map(image => <button type="button" key={image.id} className="group overflow-hidden rounded-xl border border-[#dbe4dd] bg-white text-left transition hover:-translate-y-0.5 hover:border-[#3d7860] hover:shadow-md disabled:cursor-wait disabled:opacity-60" onClick={() => selectedId && activePage && applyLibraryImageMutation.mutate({ ebookId: selectedId, pageId: activePage.id, imageId: image.id })} disabled={applyLibraryImageMutation.isPending}><img src={image.imageUrl} alt={image.name} className="aspect-[4/3] w-full object-cover" /><span className="block truncate px-3 py-2 text-xs font-medium text-[#244c3d]">{image.name}</span></button>)}</div> : <div className="rounded-xl bg-[#f4f6f2] p-8 text-center text-sm text-[#64756b]">Sua biblioteca ainda está vazia. Importe a primeira imagem para começar.</div>}</DialogContent></Dialog>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}><DialogContent className="new-book-dialog max-h-[calc(100dvh-28px)] overflow-y-auto sm:max-w-[760px]"><DialogHeader><p className="studio-kicker">NOVO LIVRO</p><DialogTitle>Que tipo de experiência você quer criar?</DialogTitle><DialogDescription>O estúdio prepara o livro todo automaticamente. Sua revisão acontece no final, página por página.</DialogDescription></DialogHeader><div className="book-type-choice"><button type="button" onClick={() => setBookType("historybook")} className={cn(bookType === "historybook" && "chosen")}><BookHeart /><div><strong>Historybook</strong><p>História cristã com texto e imagens gerados para todas as páginas.</p></div><Check /></button><button type="button" onClick={() => setBookType("coloring")} className={cn(bookType === "coloring" && "chosen")}><Palette /><div><strong>Livro para Colorir</strong><p>Tema e páginas ilustradas para pintar, sem narrativa.</p></div><Check /></button></div><div className="new-book-fields"><div className="field-span"><Label htmlFor="book-idea">Tema e direção do livro</Label><Textarea id="book-idea" value={idea} onChange={event => setIdea(event.target.value)} placeholder={bookType === "coloring" ? "Ex.: Histórias bíblicas para colorir, com Adão e Eva, Arca de Noé, Davi e Golias..." : "Ex.: Uma criança encontra coragem para ajudar um novo colega na escola e aprende sobre amizade e fé..."} className="new-book-idea" /></div><div><Label>Quantidade de páginas</Label><Select value={pageCount} onValueChange={setPageCount}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{[4, 6, 8, 10, 12, 16, 20, 24].map(amount => <SelectItem key={amount} value={String(amount)}>{amount} páginas</SelectItem>)}</SelectContent></Select></div><div><Label htmlFor="book-audience">Faixa etária / público</Label><Input id="book-audience" value={audience} onChange={event => setAudience(event.target.value)} /></div><div><Label htmlFor="book-tone">Tom</Label><Input id="book-tone" value={tone} onChange={event => setTone(event.target.value)} /></div><div><Label htmlFor="book-visual">Estilo visual</Label><Input id="book-visual" value={visualStyle} onChange={event => setVisualStyle(event.target.value)} /></div></div><div className="new-book-footer"><span>{bookTypeCopy[bookType].description}</span><Button className="forest-button" onClick={makeBook} disabled={createMutation.isPending || idea.trim().length < 12}>{createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}{bookTypeCopy[bookType].action}</Button></div></DialogContent></Dialog>
 

@@ -50,6 +50,13 @@
       "when": 1786996096300,
       "tag": "0006_peaceful_sir_ram",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1787053469670,
+      "tag": "0007_secret_quicksilver",
+      "breakpoints": true
     }
   ]
 }

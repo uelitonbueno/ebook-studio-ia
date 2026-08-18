@@ -6,6 +6,7 @@ import {
   Ebook,
   EbookAsset,
   EbookExport,
+  ImageLibraryItem,
   InsertUser,
   User,
   chapters,
@@ -13,6 +14,7 @@ import {
   ebookAssets,
   ebookExports,
   ebooks,
+  imageLibrary,
   users,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
@@ -219,6 +221,32 @@ export async function createEbookAsset(input: {
   const id = Number(result[0].insertId);
   const created = await db.select().from(ebookAssets).where(eq(ebookAssets.id, id)).limit(1);
   return created[0] as EbookAsset;
+}
+
+export async function listImageLibraryByUser(userId: number): Promise<ImageLibraryItem[]> {
+  const db = requireDb(await getDb());
+  return db.select().from(imageLibrary).where(eq(imageLibrary.userId, userId)).orderBy(desc(imageLibrary.createdAt)) as Promise<ImageLibraryItem[]>;
+}
+
+export async function getImageLibraryItem(imageId: number, userId: number): Promise<ImageLibraryItem | undefined> {
+  const db = requireDb(await getDb());
+  const result = await db.select().from(imageLibrary).where(and(eq(imageLibrary.id, imageId), eq(imageLibrary.userId, userId))).limit(1);
+  return result[0] as ImageLibraryItem | undefined;
+}
+
+export async function createImageLibraryItem(input: {
+  userId: number;
+  name: string;
+  storageKey: string;
+  imageUrl: string;
+  mimeType: string;
+  fileSize: number;
+}): Promise<ImageLibraryItem> {
+  const db = requireDb(await getDb());
+  const result = await db.insert(imageLibrary).values(input);
+  const id = Number(result[0].insertId);
+  const created = await db.select().from(imageLibrary).where(eq(imageLibrary.id, id)).limit(1);
+  return created[0] as ImageLibraryItem;
 }
 
 export async function createEbookExport(input: {

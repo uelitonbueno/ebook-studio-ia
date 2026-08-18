@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { createEbookAsset, createEbookExport, createEbook, deleteEbook, getEbookDetails, listEbooksByUser, replaceBookPages, replaceChapters, updateBookPage, updateChapter, updateEbook } from "../db";
+import { createEbookAsset, createEbookExport, createEbook, createImageLibraryItem, deleteEbook, getEbookDetails, getImageLibraryItem, listImageLibraryByUser, listEbooksByUser, replaceBookPages, replaceChapters, updateBookPage, updateChapter, updateEbook } from "../db";
 import { bookPlanSchema, buildBookPlanPrompt, buildChapterPrompt, buildDiscoveryPrompt, buildOutlinePrompt, buildPageImagePrompt, buildRewritePrompt, discoverySchema, outlineSchema } from "../ebookRules";
 import { buildEbookExportBuffer, EbookExportFormat } from "../exporters";
 import { generateImage } from "../_core/imageGeneration";
@@ -8,6 +8,7 @@ import { invokeLLM, listLLMModels } from "../_core/llm";
 import { protectedProcedure, router } from "../_core/trpc";
 import { storagePut } from "../storage";
 import { getImageGenerationRetryAfter, isImageGenerationBlocked, isImageGenerationUnavailable, restorePageStatusAfterImageFailure } from "../imageGenerationState";
+import { decodeLibraryImageDataUrl, imageExtension, LIBRARY_IMAGE_MIME_TYPES, type LibraryImageMimeType } from "../imageLibraryRules";
 
 const projectInput = z.object({
   idea: z.string().min(12, "Descreva um pouco mais a sua ideia.").max(30000),
@@ -118,6 +119,45 @@ const bookPlanResponseFormat = {
 
 export const ebookRouter = router({
   list: protectedProcedure.query(({ ctx }) => listEbooksByUser(ctx.user.id)),
+
+  listImageLibrary: protectedProcedure.query(({ ctx }) => listImageLibraryByUser(ctx.user.id)),
+
+  uploadLibraryImage: protectedProcedure.input(z.object({
+    name: z.string().min(1).max(255),
+    mimeType: z.enum(LIBRARY_IMAGE_MIME_TYPES),
+    dataUrl: z.string().min(100).max(18_000_000),
+  })).mutation(async ({ ctx, input }) => {
+    let buffer: Buffer;
+    try {
+      buffer = decodeLibraryImageDataUrl(input.dataUrl, input.mimeType as LibraryImageMimeType);
+    } catch (error) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "O arquivo de imagem enviado é inválido." });
+    }
+    const extension = imageExtension(input.mimeType as LibraryImageMimeType);
+    const uploaded = await storagePut(`image-library/${ctx.user.id}/${safeFilename(input.name)}.${extension}`, buffer, input.mimeType);
+    return createImageLibraryItem({
+      userId: ctx.user.id,
+      name: input.name.trim(),
+      storageKey: uploaded.key,
+      imageUrl: uploaded.url,
+      mimeType: input.mimeType,
+      fileSize: buffer.length,
+    });
+  }),
+
+  applyLibraryImage: protectedProcedure.input(z.object({
+    ebookId: z.number().int().positive(),
+    pageId: z.number().int().positive(),
+    imageId: z.number().int().positive(),
+  })).mutation(async ({ ctx, input }) => {
+    const project = await getOwnedEbook(input.ebookId, ctx.user.id);
+    if (!project.pages.some(page => page.id === input.pageId)) throw new TRPCError({ code: "NOT_FOUND", message: "Página não encontrada." });
+    const libraryImage = await getImageLibraryItem(input.imageId, ctx.user.id);
+    if (!libraryImage) throw new TRPCError({ code: "NOT_FOUND", message: "Imagem não encontrada na biblioteca." });
+    const page = await updateBookPage(input.pageId, input.ebookId, ctx.user.id, { imageUrl: libraryImage.imageUrl, status: "ready" });
+    if (!page) throw new TRPCError({ code: "NOT_FOUND", message: "Página não encontrada." });
+    return page;
+  }),
 
   get: protectedProcedure.input(z.object({ ebookId: z.number().int().positive() })).query(({ ctx, input }) => getOwnedEbook(input.ebookId, ctx.user.id)),
 

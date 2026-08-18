@@ -70,6 +70,17 @@ export const ebookAssets = mysqlTable("ebookAssets", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
+export const imageLibrary = mysqlTable("imageLibrary", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 255 }).notNull(),
+  storageKey: varchar("storageKey", { length: 1024 }).notNull(),
+  imageUrl: text("imageUrl").notNull(),
+  mimeType: varchar("mimeType", { length: 100 }).notNull(),
+  fileSize: int("fileSize").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
 export const ebookExports = mysqlTable("ebookExports", {
   id: int("id").autoincrement().primaryKey(),
   ebookId: int("ebookId").notNull().references(() => ebooks.id, { onDelete: "cascade" }),
@@ -79,7 +90,7 @@ export const ebookExports = mysqlTable("ebookExports", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
-export const usersRelations = relations(users, ({ many }) => ({ ebooks: many(ebooks) }));
+export const usersRelations = relations(users, ({ many }) => ({ ebooks: many(ebooks), imageLibrary: many(imageLibrary) }));
 export const ebooksRelations = relations(ebooks, ({ one, many }) => ({
   user: one(users, { fields: [ebooks.userId], references: [users.id] }),
   chapters: many(chapters),
@@ -101,6 +112,9 @@ export const ebookAssetsRelations = relations(ebookAssets, ({ one }) => ({
 export const ebookExportsRelations = relations(ebookExports, ({ one }) => ({
   ebook: one(ebooks, { fields: [ebookExports.ebookId], references: [ebooks.id] }),
 }));
+export const imageLibraryRelations = relations(imageLibrary, ({ one }) => ({
+  user: one(users, { fields: [imageLibrary.userId], references: [users.id] }),
+}));
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
@@ -109,3 +123,4 @@ export type Chapter = typeof chapters.$inferSelect;
 export type BookPage = typeof bookPages.$inferSelect;
 export type EbookAsset = typeof ebookAssets.$inferSelect;
 export type EbookExport = typeof ebookExports.$inferSelect;
+export type ImageLibraryItem = typeof imageLibrary.$inferSelect;

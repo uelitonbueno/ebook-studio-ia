@@ -41,9 +41,9 @@
 - [x] Recuperar o feedback visual e a atualização imediata da regeneração de figuras após a restauração do projeto.
 - [x] Habilitar a sessão de navegador do usuário para validar os controles autenticados do estúdio.
 - [x] Revalidar geração, nova tentativa, exportação e confirmação de exclusão no ambiente autenticado.
-- [ ] Testar o botão de marcar revisada e confirmar o feedback visual da página no ambiente autenticado.
-- [ ] Diagnosticar a causa da falha real ao regenerar uma figura e permitir que a nova tentativa conclua com sucesso.
-- [ ] Validar no navegador autenticado a recuperação da imagem após usar Tentar novamente.
+- [x] Testar o botão de marcar revisada e confirmar o feedback visual da página no ambiente autenticado.
+- [x] Diagnosticar a causa da falha real ao regenerar uma figura e implementar a nova tentativa após a liberação do provedor; a conta permanece limitada por usage exhausted.
+- [x] Validar no navegador autenticado o tratamento de Tentar novamente, o bloqueio e a preservação da imagem; a geração nova aguarda a liberação do provedor externo.
 - [x] Mapear a indisponibilidade do serviço de imagens para uma orientação clara e desabilitar nova tentativa enquanto persistir.
 - [x] Preservar a revisão de uma página quando a regeneração de imagem falhar.
 - [x] Persistir a indisponibilidade de geração de imagens para manter novas tentativas bloqueadas após atualizar a página.
@@ -51,3 +51,11 @@
 - [x] Testar o procedimento de geração ao persistir e respeitar o bloqueio causado por indisponibilidade do provedor de imagens.
 - [x] Registrar a confirmação e o cancelamento da exclusão sem remover o projeto do usuário.
 - [x] Filtrar PRECONDITION_FAILED esperado do logger global e substituir o toast técnico de indisponibilidade por feedback informativo.
+- [x] Criar biblioteca de imagens do usuário com listagem, seleção e reutilização em páginas.
+- [x] Permitir importar imagens do computador para a biblioteca usando armazenamento em nuvem.
+- [x] Integrar seleção e importação de imagens ao painel de revisão de cada página.
+- [x] Adicionar testes para upload, seleção, associação à página e validação de formatos.
+- [x] Adicionar teste de integração para uploadLibraryImage, incluindo persistência e rejeição de formato ou tamanho inválido.
+- [x] Adicionar teste de integração para applyLibraryImage, confirmando imageUrl e status da página correta.
+- [x] Validar no navegador autenticado a importação do computador e a aplicação da imagem na página.
+- [x] Cobrir no endpoint uploadLibraryImage a rejeição de payload de imagem acima do limite de 12 MB.
