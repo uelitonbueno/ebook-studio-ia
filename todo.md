@@ -59,3 +59,4 @@
 - [x] Adicionar teste de integração para applyLibraryImage, confirmando imageUrl e status da página correta.
 - [x] Validar no navegador autenticado a importação do computador e a aplicação da imagem na página.
 - [x] Cobrir no endpoint uploadLibraryImage a rejeição de payload de imagem acima do limite de 12 MB.
+- [ ] Exportar o projeto para um repositório GitHub com proprietário e nome definidos pelo usuário.
